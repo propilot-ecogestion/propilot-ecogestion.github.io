@@ -285,14 +285,18 @@ function PfmpPeriodModal({klass,initial=null,onClose,onSaved}) {
   async function submit(e){
     e.preventDefault();setError('')
     if(f.start_date&&f.end_date&&f.end_date<f.start_date){setError('La date de fin doit être postérieure à la date de début.');return}
-    const payload={label:f.label.trim(),start_date:f.start_date||null,end_date:f.end_date||null,sort_order:Number(f.sort_order||10)}
+    const inputs=e.currentTarget.elements
+    const startDate=inputs.namedItem('start_date')?.value||f.start_date||''
+    const endDate=inputs.namedItem('end_date')?.value||f.end_date||''
+    if(startDate&&endDate&&endDate<startDate){setError('La date de fin doit être postérieure à la date de début.');return}
+    const payload={label:f.label.trim(),start_date:startDate||null,end_date:endDate||null,sort_order:Number(f.sort_order||10)}
     const q=initial?supabase.from('pp_pfmp_periods').update(payload).eq('id',initial.id):supabase.from('pp_pfmp_periods').insert({...payload,class_id:klass.id})
     const {data,error}=await q.select('id,start_date,end_date').single()
     if(error){setError(toastError(error));return}
     if(data.start_date!==payload.start_date||data.end_date!==payload.end_date){setError('Les dates PFMP n’ont pas été enregistrées correctement. Veuillez réessayer.');return}
     onSaved()
   }
-  return <Modal title={initial?'Modifier la période PFMP':'Nouvelle période PFMP'} onClose={onClose}><form className="form-grid" onSubmit={submit}><label>Libellé<input value={f.label} onChange={e=>setF({...f,label:e.target.value})} required/></label><label>Ordre<input type="number" value={f.sort_order} onChange={e=>setF({...f,sort_order:Number(e.target.value)})}/></label><label>Début<input type="date" value={f.start_date} onChange={e=>setF({...f,start_date:e.target.value})}/></label><label>Fin<input type="date" value={f.end_date} onChange={e=>setF({...f,end_date:e.target.value})}/></label>{error&&<div className="form-message">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary"><Save/>{initial?'Enregistrer':'Créer'}</button></div></form></Modal>
+  return <Modal title={initial?'Modifier la période PFMP':'Nouvelle période PFMP'} onClose={onClose}><form className="form-grid" onSubmit={submit}><label>Libellé<input value={f.label} onChange={e=>setF({...f,label:e.target.value})} required/></label><label>Ordre<input type="number" value={f.sort_order} onChange={e=>setF({...f,sort_order:Number(e.target.value)})}/></label><label>Début<input name="start_date" type="date" value={f.start_date} onChange={e=>setF({...f,start_date:e.target.value})}/></label><label>Fin<input name="end_date" type="date" value={f.end_date} onChange={e=>setF({...f,end_date:e.target.value})}/></label>{error&&<div className="form-message">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary"><Save/>{initial?'Enregistrer':'Créer'}</button></div></form></Modal>
 }
 
 
