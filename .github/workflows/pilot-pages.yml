@@ -37,6 +37,13 @@ jobs:
           cat ci/main.part1 ci/main.part2 ci/main.part3 ci/main.part4 > src/main.jsx
           test -s src/main.jsx
 
+      - name: Restore original high-quality ProPilot logo
+        run: |
+          curl --fail --location --retry 3 --silent --show-error \
+            https://raw.githubusercontent.com/zizahprof-lab/ProPilot-Eco-Gestion/v22-onboarding-pilot/public/propilot-approved.webp \
+            --output public/propilot-approved.webp
+          test -s public/propilot-approved.webp
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
