@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 136" aria-label="ProPilot : boussole et chapeau de diplômé">
+<defs><linearGradient id="n" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#071f51"/><stop offset="1" stop-color="#114c9b"/></linearGradient><linearGradient id="b" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#68c3ff"/><stop offset="1" stop-color="#0875f6"/></linearGradient></defs>
+<!-- Chapeau fidèle à la proposition validée -->
+<path d="M15 31 64 7l49 24-15 8-34-13-34 13Z" fill="url(#n)"/>
+<path d="M102 34v23" stroke="#0a2a63" stroke-width="3.4"/><rect x="98" y="54" width="8" height="12" rx="2.7" fill="#0a2a63"/>
+<!-- Anneau de boussole, avec pointes cardinales blanches -->
+<path d="M64 39A45 45 0 0 0 19 84" stroke="url(#n)" stroke-width="11" fill="none"/>
+<path d="M19 84a45 45 0 0 0 45 45" stroke="url(#n)" stroke-width="11" fill="none"/>
+<path d="M64 39a45 45 0 0 1 45 45" stroke="url(#b)" stroke-width="11" fill="none"/>
+<path d="M109 84a45 45 0 0 1-45 45" stroke="url(#b)" stroke-width="11" fill="none"/>
+<path d="m64 40 5 15H59ZM64 128l-5-15h10ZM20 84l14-5v10ZM108 84l-14 5V79Z" fill="#fff"/>
+<path d="m42 94 47-33-25 54-9-23Z" fill="#127ff7"/>
+<path d="m42 94 13-2 9 23Z" fill="url(#n)"/>
+</svg>

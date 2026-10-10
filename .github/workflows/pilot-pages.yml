@@ -1,0 +1,72 @@
+name: Prepare ProPilot Pilot Site
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "ci/**"
+      - "public/**"
+      - "index.html"
+      - "package.json"
+      - "vite.config.js"
+      - ".github/workflows/pilot-pages.yml"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: propilot-pilot-site
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout V22
+        uses: actions/checkout@v4
+
+      - name: Reconstruct V22 main source
+        run: |
+          cat ci/main.part1 ci/main.part2 ci/main.part3 ci/main.part4 > src/main.jsx
+          test -s src/main.jsx
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run ProPilot checks
+        run: |
+          node scripts/check_role_guards.mjs
+          node scripts/check_pilot_flow.mjs
+          node scripts/check_onboarding_v22.mjs
+          node scripts/check_student_portal.mjs
+          node scripts/check_ccf_dossier.mjs
+          node scripts/check_ccf_alerts.mjs
+          node scripts/check_ccf_score_parity.mjs
+          node scripts/check_pilot_curricula.mjs
+
+      - name: Build pilot
+        run: npm run build -- --base=/
+
+      - name: Prepare Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

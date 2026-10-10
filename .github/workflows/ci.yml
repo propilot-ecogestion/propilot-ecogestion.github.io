@@ -1,0 +1,42 @@
+name: ProPilot CI
+
+on:
+  push:
+    branches: [main, v19-build-validation, v22-onboarding-pilot]
+  pull_request:
+    branches: [main]
+
+jobs:
+  checks-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct V22 main source
+        run: |
+          cat ci/main.part1 ci/main.part2 ci/main.part3 ci/main.part4 > src/main.jsx
+          test -s src/main.jsx
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run core ProPilot checks
+        run: |
+          node scripts/check_role_guards.mjs
+          node scripts/check_pilot_flow.mjs
+          node scripts/check_onboarding_v22.mjs
+          node scripts/check_student_portal.mjs
+          node scripts/check_ccf_dossier.mjs
+          node scripts/check_ccf_alerts.mjs
+          node scripts/check_ccf_score_parity.mjs
+          node scripts/check_pilot_curricula.mjs
+
+      - name: Production build
+        run: npm run build
