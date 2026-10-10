@@ -1,0 +1,32 @@
+{
+  "name": "plp-vente-propilot",
+  "private": true,
+  "version": "0.16.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check:reference": "node scripts/check_reference_lock.mjs",
+    "check:roles": "node scripts/check_role_guards.mjs",
+    "check:pilot": "node scripts/check_pilot_flow.mjs",
+    "check:student": "node scripts/check_student_portal.mjs",
+    "check:ccf-docs": "node scripts/check_ccf_documents.mjs",
+    "check:ccf-dossier": "node scripts/check_ccf_dossier.mjs",
+    "check:personal": "node scripts/check_personal_functional_lock.mjs",
+    "check:ccf-alerts": "node scripts/check_ccf_alerts.mjs",
+    "check:all": "npm run check:reference && npm run check:personal && npm run check:roles && npm run check:pilot && npm run check:student && npm run check:ccf-docs && npm run check:ccf-dossier && npm run check:ccf-alerts && npm run check:onboarding",
+    "check:onboarding": "node scripts/check_onboarding_v22.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "xlsx": "0.18.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.5"
+  }
+}
