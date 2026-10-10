@@ -175,7 +175,17 @@ export default function SetupWizard({onClose,onCreated}){
       return
     }
     if(step===3)await patch({organization_mode:draft.organization_mode,collaborators:collaborators()},4)
-    if(step===4)await patch({enabled_modules:{...(draft.enabled_modules||DEFAULT_MODULES),...(draft.diploma_code==='2MRC'?{ccf:false}:{})},pfmp_periods:pfmps()},5)
+    if(step===4){
+      const enteredPeriods=pfmps().map(p=>({...p,start_date:p.start_date||'',end_date:p.end_date||''}))
+      if(enteredPeriods.some(p=>p.start_date&&p.end_date&&p.end_date<p.start_date)){
+        setMessage('La date de fin d’une PFMP doit être postérieure à sa date de début.');return
+      }
+      const saved=await patch({enabled_modules:{...(draft.enabled_modules||DEFAULT_MODULES),...(draft.diploma_code==='2MRC'?{ccf:false}:{})},pfmp_periods:enteredPeriods},5)
+      if(!saved)return
+      const savedPeriods=Array.isArray(saved.pfmp_periods)?saved.pfmp_periods:[]
+      const datesSaved=enteredPeriods.length===savedPeriods.length&&enteredPeriods.every((p,i)=>p.start_date===(savedPeriods[i]?.start_date||'')&&p.end_date===(savedPeriods[i]?.end_date||''))
+      if(!datesSaved){setMessage('La sauvegarde des dates PFMP a échoué. Vérifiez les dates et réessayez.');setStep(4)}
+    }
     if(step===5)setStep(6)
   }
   function back(){setMessage('');setStep(s=>Math.max(1,s-1))}
