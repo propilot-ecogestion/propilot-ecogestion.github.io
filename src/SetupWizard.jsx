@@ -94,7 +94,7 @@ export default function SetupWizard({onClose,onCreated}){
   function removeCollaborator(index){setDraft({...draft,collaborators:collaborators().filter((_,i)=>i!==index)})}
 
   function pfmps(){return Array.isArray(draft?.pfmp_periods)?draft.pfmp_periods:[]}
-  function setPfmp(index,key,value){const rows=[...pfmps()];rows[index]={...rows[index],[key]:value};setDraft({...draft,pfmp_periods:rows})}
+  function setPfmp(index,key,value){setDraft(previous=>{const rows=[...(previous?.pfmp_periods||[])];rows[index]={...rows[index],[key]:value};return {...previous,pfmp_periods:rows}})}
   function addPfmp(){setDraft({...draft,pfmp_periods:[...pfmps(),{label:`PFMP ${pfmps().length+1}`,start_date:'',end_date:'',sort_order:(pfmps().length+1)*10}]})}
   function removePfmp(index){setDraft({...draft,pfmp_periods:pfmps().filter((_,i)=>i!==index)})}
 
@@ -132,7 +132,8 @@ export default function SetupWizard({onClose,onCreated}){
     const validation=collaboratorValidation()
     if(validation){setMessage(validation);setBusy(false);return}
     const collabs=collaborators().filter(x=>normalizeEmail(x.email)).map(x=>({email:normalizeEmail(x.email),member_role:x.member_role||'editor'}))
-    await patch({collaborators:collabs,pfmp_periods:pfmps(),enabled_modules:{...(draft.enabled_modules||DEFAULT_MODULES),...(draft.diploma_code==='2MRC'?{ccf:false}:{})},step_no:6})
+    const savedDraft=await patch({collaborators:collabs,pfmp_periods:pfmps(),enabled_modules:{...(draft.enabled_modules||DEFAULT_MODULES),...(draft.diploma_code==='2MRC'?{ccf:false}:{})},step_no:6})
+    if(!savedDraft){setBusy(false);return}
     const {data:classId,error}=await supabase.rpc('pp_finalize_class_setup',{target_draft_id:draft.id})
     if(error){setMessage(error.message);setBusy(false);return}
     if(studentsPreview.length){
@@ -200,7 +201,7 @@ export default function SetupWizard({onClose,onCreated}){
 
         {step===6&&<div className="setup-section"><div className="setup-summary"><CheckCircle2/><div><h3>Votre boîte à outils est prête à être créée</h3><p>La classe sera vide de vos données pédagogiques personnelles, mais le bon référentiel, les périodes P1 à P7, les transversalités économie-droit et les épreuves correspondant au diplôme sont déjà disponibles.</p></div></div><div className="summary-list"><div><span>Établissement</span><b>{draft.establishment_name} — {draft.establishment_city}</b></div><div><span>Classe</span><b>{draft.class_name} • {draft.level_label} • {draft.school_year}</b></div><div><span>Diplôme</span><b>{packs.find(p=>p.code===draft.diploma_code)?.short_name||draft.diploma_code}</b></div><div><span>Organisation</span><b>{draft.organization_mode} • {collaborators().length} collègue(s) invité(s)</b></div><div><span>PFMP</span><b>{pfmps().length} période(s)</b></div><div><span>Élèves à importer</span><b>{studentsPreview.length}</b></div></div></div>}
 
-        {step===2&&<div className="form-hint" role="status">Diagnostic étape 2 : bouton actif · clics reçus : {step2Clicks} · sauvegarde : {busy?'en cours':'au repos'} · diplôme : {draft.diploma_code||'non choisi'} · classe : {draft.class_name||'vide'} · niveau : {draft.level_label||'non choisi'}</div>}
+        
         {message&&<div className="form-message">{message}</div>}
         <div className="setup-actions"><button className="btn ghost" onClick={step===1?onClose:back}><ArrowLeft/>{step===1?'Fermer':'Retour'}</button>{step<6?<button className="btn primary" disabled={step!==2&&(busy||!canNext)} type="button" onClick={next}>Continuer <ChevronRight/></button>:<button className="btn primary" disabled={busy} onClick={finalize}><Save/>{busy?'Création…':'Créer la classe'}</button>}</div>
       </section>
