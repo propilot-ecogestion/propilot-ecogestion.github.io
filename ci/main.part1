@@ -1,0 +1,553 @@
+import React, { useEffect, useMemo, useState } from 'react'
+import { createRoot } from 'react-dom/client'
+import { supabase } from './supabase'
+import {
+  GraduationCap, Users, BookOpenCheck, ClipboardCheck, LogOut, Plus, ShieldCheck,
+  Clock3, ChevronRight, School, LayoutDashboard, Search, Save, UserCheck, Settings,
+  BriefcaseBusiness, FileText, Upload, Download, Trash2, Pencil, X, ArrowLeft,
+  BarChart3, CheckCircle2, AlertCircle, UserPlus, Printer, RotateCcw, FolderOpen,
+  Eye, EyeOff, BellRing, SlidersHorizontal, ListChecks, CalendarDays, Target, Sparkles, Archive, Copy, Maximize2, Minimize2
+} from 'lucide-react'
+import SetupWizard from './SetupWizard'
+import GuidedTour from './GuidedTour'
+import PersonalProgression from './PersonalProgression'
+import EvaluationMatrix from './EvaluationMatrix'
+import PfmpInline from './PfmpInline'
+import SynthesisV14 from './SynthesisV14'
+import { detectCsvDelimiter, parseCsvText } from './csv'
+import './styles.css'
+
+const LEVELS = [
+  { code: 'NE', label: 'Non évalué' },
+  { code: 'N', label: 'Non maîtrisé' },
+  { code: 'D', label: 'Début de maîtrise' },
+  { code: 'A', label: 'Maîtrisé' },
+  { code: 'E', label: 'Très bonne maîtrise' },
+]
+
+const LEVEL_ORDER = { N: 0, D: 1, A: 2, E: 3 }
+const GROUP_LABELS = {
+  G1: 'Conseiller et vendre',
+  G2: 'Suivre les ventes',
+  G3: 'Fidéliser et développer la relation client',
+  G4A: "Animer et gérer l’espace commercial",
+  G4B: "Prospecter et valoriser l’offre commerciale",
+}
+
+function toastError(error) {
+  return error?.message || String(error || 'Une erreur est survenue.')
+}
+
+function downloadTextFile(content, filename, type='text/plain;charset=utf-8') {
+  const blob=new Blob([content],{type})
+  const url=URL.createObjectURL(blob)
+  const a=document.createElement('a')
+  a.href=url; a.download=filename; a.click()
+  setTimeout(()=>URL.revokeObjectURL(url),1000)
+}
+
+function safeFileName(v){return String(v||'fichier').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9._-]+/g,'_')}
+
+function latestByCompetency(evaluations) {
+  const map = new Map()
+  for (const e of [...evaluations].sort((a, b) => new Date(b.assessed_at) - new Date(a.assessed_at))) {
+    if (!map.has(e.competency_code) && e.level !== 'NE') map.set(e.competency_code, e)
+  }
+  return [...map.values()]
+}
+
+function computeSynthesis(evaluations, mapping = { N: 5, D: 10, A: 15, E: 20 }, mode = 'latest_per_competency') {
+  const rows = mode === 'all_evaluations'
+    ? evaluations.filter(e => e.level !== 'NE')
+    : latestByCompetency(evaluations)
+  const scored = rows.filter(e => mapping[e.level] != null)
+  const note = scored.length ? scored.reduce((s, e) => s + Number(mapping[e.level]), 0) / scored.length : null
+  const byGroup = {}
+  for (const e of scored) {
+    byGroup[e.competency_group] ||= []
+    byGroup[e.competency_group].push(Number(mapping[e.level]))
+  }
+  const groupAverages = Object.fromEntries(Object.entries(byGroup).map(([g, values]) => [g, values.reduce((a,b)=>a+b,0)/values.length]))
+  const levels = scored.map(e => e.level)
+  const dominant = levels.length
+    ? Object.entries(levels.reduce((acc,l)=>(acc[l]=(acc[l]||0)+1,acc),{})).sort((a,b)=>(b[1]-a[1])||((LEVEL_ORDER[b[0]]??-1)-(LEVEL_ORDER[a[0]]??-1)))[0][0]
+    : 'NE'
+  return { note, groupAverages, evaluated: scored.length, dominant, latest: latestByCompetency(evaluations) }
+}
+
+function App() {
+  const [session, setSession] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [recovery, setRecovery] = useState(false)
+  const [profile, setProfile] = useState(null)
+  const [studentAccount, setStudentAccount] = useState(null)
+  const [studentPortalState, setStudentPortalState] = useState(null)
+  const [classes, setClasses] = useState([])
+  const [page, setPage] = useState('dashboard')
+  const [activeClass, setActiveClass] = useState(null)
+  const [notice, setNotice] = useState('')
+  const [pendingInvites, setPendingInvites] = useState([])
+  const [guidedTourOpen,setGuidedTourOpen]=useState(false)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session ?? null)
+      setLoading(false)
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      setSession(nextSession)
+      if(event === 'PASSWORD_RECOVERY') setRecovery(true)
+    })
+    return () => sub.subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    if (!session) {
+      setProfile(null); setStudentAccount(null); setStudentPortalState(null); setClasses([])
+      return
+    }
+    bootstrapAccount()
+  }, [session])
+
+  useEffect(() => {
+    if (profile?.approved) { loadClasses(); loadPendingInvites() }
+  }, [profile])
+
+  useEffect(() => {
+    if (!session?.user?.id) return
+    let busy=false
+    const refreshQuietly=async()=>{
+      if(busy||document.visibilityState==='hidden')return
+      busy=true
+      try{
+        const {data:p}=await supabase.from('pp_profiles').select('*').eq('user_id',session.user.id).maybeSingle()
+        if(p){
+          setProfile(p)
+          if(p.approved){
+            const [{data},{data:invites}]=await Promise.all([
+              supabase.from('pp_classes').select('*, pp_diploma_packs(short_name), pp_establishments(id,name,city,logo_path,created_by)').order('created_at',{ascending:false}),
+              supabase.rpc('pp_get_my_pending_invites')
+            ])
+            if(data){
+              setClasses(data)
+              setActiveClass(prev=>prev?(data.find(x=>x.id===prev.id)||prev):prev)
+            }
+            if(invites) setPendingInvites(invites)
+          }
+        } else {
+          const {data:studentState}=await supabase.rpc('pp_get_my_student_portal_state')
+          if(studentState){
+            setStudentPortalState(studentState)
+            if(studentState.linked&&studentState.access_enabled&&studentAccount?.id===studentState.student_id){
+              setStudentAccount(prev=>prev?{...prev,visibility:studentState.visibility||prev.visibility}:prev)
+            }
+          }
+        }
+      } finally {busy=false}
+    }
+    window.addEventListener('focus',refreshQuietly)
+    document.addEventListener('visibilitychange',refreshQuietly)
+    return ()=>{window.removeEventListener('focus',refreshQuietly);document.removeEventListener('visibilitychange',refreshQuietly)}
+  }, [session?.user?.id])
+
+  async function bootstrapAccount() {
+    setLoading(true)
+    setNotice('')
+    const { data: p, error } = await supabase
+      .from('pp_profiles')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .maybeSingle()
+
+    if (error) setNotice(toastError(error))
+    if (p) {
+      setProfile(p)
+      setStudentAccount(null)
+      setStudentPortalState(null)
+      if (p.approved) await loadPendingInvites()
+      setLoading(false)
+      return
+    }
+
+    const { data: claimedId, error: claimError } = await supabase.rpc('pp_claim_student_account')
+    if (claimError) {
+      setNotice(toastError(claimError))
+      setLoading(false)
+      return
+    }
+
+    const { data: portalState, error: portalStateError } = await supabase.rpc('pp_get_my_student_portal_state')
+    if (portalStateError) setNotice(toastError(portalStateError))
+    setStudentPortalState(portalState || null)
+
+    const studentId=claimedId||(portalState?.linked&&portalState?.access_enabled?portalState.student_id:null)
+    if (studentId) {
+      const { data: student, error: sErr } = await supabase
+        .from('pp_students')
+        .select('*, pp_classes(*, pp_diploma_packs(short_name), pp_establishments(id,name,city,logo_path))')
+        .eq('id', studentId)
+        .single()
+      if (sErr) setNotice(toastError(sErr))
+      setStudentAccount(student || null)
+    }
+    setLoading(false)
+  }
+
+  async function loadPendingInvites() {
+    const { data, error } = await supabase.rpc('pp_get_my_pending_invites')
+    if (error) { setNotice(toastError(error)); return [] }
+    const rows=data || []
+    setPendingInvites(rows)
+    return rows
+  }
+
+  async function acceptInvite(inviteId) {
+    setNotice('')
+    const { error } = await supabase.rpc('pp_accept_class_invite',{target_invite_id:inviteId})
+    if (error) { setNotice(toastError(error)); return }
+    await Promise.all([loadClasses(),loadPendingInvites()])
+    setNotice('Invitation acceptée. La classe est maintenant disponible dans votre espace.')
+  }
+
+  async function declineInvite(inviteId) {
+    setNotice('')
+    const { error } = await supabase.rpc('pp_decline_class_invite',{target_invite_id:inviteId})
+    if (error) { setNotice(toastError(error)); return }
+    await loadPendingInvites()
+    setNotice('Invitation refusée.')
+  }
+
+  async function loadClasses() {
+    const { data, error } = await supabase
+      .from('pp_classes')
+      .select('*, pp_diploma_packs(short_name), pp_establishments(id,name,city,logo_path,created_by)')
+      .order('created_at', { ascending: false })
+    if (error) setNotice(toastError(error))
+    const rows=data ?? []
+    setClasses(rows)
+    if(activeClass){const refreshed=rows.find(x=>x.id===activeClass.id);if(refreshed)setActiveClass(refreshed)}
+    return rows
+  }
+
+  async function signOut() {
+    await supabase.auth.signOut()
+    setPage('dashboard')
+    setActiveClass(null)
+  }
+
+  if (loading) return <Splash />
+  if (recovery && session) return <PasswordRecovery onDone={()=>setRecovery(false)} />
+  if (!session) return <AuthScreen />
+  if (studentPortalState?.linked && !studentPortalState?.access_enabled) return <StudentAccessSuspended state={studentPortalState} onSignOut={signOut} onRefresh={bootstrapAccount} />
+  if (studentAccount) return <StudentPortal student={studentAccount} portalState={studentPortalState} onSignOut={signOut} />
+  if (!profile) return <UnlinkedAccount onSignOut={signOut} onRefresh={bootstrapAccount} />
+  if (!profile.approved) return <PendingApproval profile={profile} onSignOut={signOut} onRefresh={bootstrapAccount} />
+
+  return (
+    <div className="app-shell">
+      <Sidebar
+        profile={profile}
+        page={page}
+        onPage={(p) => { setPage(p); setActiveClass(null) }}
+        onSignOut={signOut}
+      />
+      <main className="main-content">
+        <Topbar profile={profile} classes={classes} activeClass={activeClass} onSelectClass={(id)=>{const c=classes.find(x=>x.id===id);if(c){setActiveClass(c);setPage('class')}}} />
+        {notice && <Notice message={notice} onClose={() => setNotice('')} />}
+        {page === 'dashboard' && (
+          <Dashboard
+            classes={classes}
+            profile={profile}
+            pendingInvites={pendingInvites}
+            onAcceptInvite={acceptInvite}
+            onDeclineInvite={declineInvite}
+            onOpenClass={(c) => { setActiveClass(c); setPage('class') }}
+            onCreated={async(classId)=>{await loadClasses(); await loadPendingInvites(); const key=`propilot-guided-tour-v22:${session.user.id}`; if(!localStorage.getItem(key))setGuidedTourOpen(true)}}
+          />
+        )}
+        {page === 'class' && activeClass && (
+          <ClassWorkspace
+            klass={activeClass}
+            profile={profile}
+            classes={classes}
+            onSelectClass={(id)=>{const c=classes.find(x=>x.id===id);if(c)setActiveClass(c)}}
+            onSignOut={signOut}
+            onBack={() => { setPage('dashboard'); setActiveClass(null) }}
+            onClassUpdated={loadClasses}
+          />
+        )}
+        {page === 'feedback' && <FeedbackPanel classes={classes} />}
+        {page === 'admin' && profile.role === 'admin' && <AdminPanel />}
+      </main>
+      <GuidedTour open={guidedTourOpen} onClose={()=>{localStorage.setItem(`propilot-guided-tour-v22:${session.user.id}`,'done');setGuidedTourOpen(false)}}/>
+    </div>
+  )
+}
+
+function Notice({ message, onClose }) {
+  return <div className="notice"><span>{message}</span><button onClick={onClose}>×</button></div>
+}
+
+function Splash() {
+  return <div className="center-screen"><div><div className="spinner"/><p>Chargement de ProPilot…</p></div></div>
+}
+
+function AuthScreen() {
+  const [mode, setMode] = useState('login')
+  const accountType = 'teacher'
+  const [loginRole,setLoginRole]=useState('teacher')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [displayName, setDisplayName] = useState('')
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function submit(e) {
+    e.preventDefault()
+    setBusy(true); setMessage('')
+    if (mode === 'login') {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) setMessage(toastError(error))
+    } else {
+      const normalizedEmail=email.trim().toLowerCase()
+      if(accountType==='teacher'&&!normalizedEmail.endsWith('@ac-aix-marseille.fr')&&!['zizah.prof@gmail.com','prof.zizah@gmail.com'].includes(normalizedEmail)){setMessage('Pendant la phase pilote, les comptes enseignants sont réservés aux adresses @ac-aix-marseille.fr.');setBusy(false);return}
+      if(password.length<8){setMessage('Choisissez un mot de passe d’au moins 8 caractères.');setBusy(false);return}
+      const { error } = await supabase.auth.signUp({
+        email: normalizedEmail, password,
+        options: { emailRedirectTo: new URL(import.meta.env.BASE_URL, window.location.origin).href, data: { account_type: accountType, display_name: displayName.trim() } }
+      })
+      if (error) setMessage(toastError(error))
+      else setMessage("Votre demande d'accès a bien été enregistrée\nBienvenue sur ProPilot 2026 !\nVotre compte est en attente de validation par l'administrateur.\nVous pourrez accéder à votre espace enseignant dès que votre demande aura été approuvée.\nMerci de votre patience.")
+    }
+    setBusy(false)
+  }
+  async function forgotPassword(){
+    if(!email){setMessage('Saisissez d’abord votre adresse e-mail.');return}
+    setBusy(true);setMessage('')
+    const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:new URL(import.meta.env.BASE_URL, window.location.origin).href})
+    setMessage(error?toastError(error):'Un lien de réinitialisation a été envoyé si cette adresse correspond à un compte.')
+    setBusy(false)
+  }
+
+  return (
+    <div className="auth-layout">
+      <div className="auth-brand" style={{position:"relative"}}>
+        <div className="brand-badge"><img src={`${import.meta.env.BASE_URL}propilot-approved.webp`} alt="Logo ProPilot : boussole et diplôme" width="58" height="58" /></div>
+        <h1>ProPilot <span>Éco-Gestion</span></h1>
+        <p className="auth-tagline">Votre espace de suivi pédagogique en économie-gestion.</p>
+        <p className="auth-description">Une plateforme dédiée au pilotage des compétences, des évaluations et des parcours des élèves, du CAP au Bac professionnel.</p>
+        <section className="auth-curricula" aria-labelledby="auth-curricula-title">
+          <h2 id="auth-curricula-title"><GraduationCap size={22}/> Formations intégrées</h2>
+          <ul>
+            <li>Bac Pro Métiers du Commerce et de la Vente – Options A et B</li>
+            <li>Bac Pro Métiers de l’Accueil</li>
+            <li>2MRC</li>
+            <li>CAP Équipier Polyvalent du Commerce</li>
+            <li>AGOrA</li>
+            <li>Logistique et Transport</li>
+          </ul>
+        </section>
+        <div className="auth-features">
+          <span><CheckCircle2/> Compétences intégrées</span>
+          <span><CheckCircle2/> Évaluations, PFMP et CCF</span>
+          <span><CheckCircle2/> Synthèse et positionnement</span>
+        </div>
+        <div style={{position:"absolute",bottom:20,left:24,color:"#dbe7ff",fontSize:13}}>Créé par Mohamed Zizah</div>
+      </div>
+      <form className="auth-card" onSubmit={submit}>
+        <h2>{mode === 'login' ? 'Connexion' : 'Créer mon compte'}</h2>
+        {mode === 'login' && <div className="segmented"><button type="button" className={loginRole==='student'?'active':''} onClick={()=>setLoginRole('student')}>Élève</button><button type="button" className={loginRole==='teacher'?'active':''} onClick={()=>setLoginRole('teacher')}>Enseignant</button></div>}
+        {mode === 'login' && loginRole==='student' && <div className="pilot-signup-note"><strong>Mon compte est créé par mon professeur</strong><span>Je saisis mon adresse e-mail et le code remis par mon professeur pour me connecter.</span></div>}
+        {mode === 'signup' && accountType === 'teacher' && (
+          <>
+            <div className="pilot-signup-note"><strong>Pilote formateurs académiques</strong><span>10 places professeur • validation administrateur obligatoire</span></div>
+            <label>Nom affiché<input value={displayName} onChange={e=>setDisplayName(e.target.value)} required /></label>
+          </>
+        )}
+        <label>Adresse e-mail<input type="email" value={email} onChange={e=>setEmail(e.target.value)} required /></label>
+        <label>{mode==='login'?'Mot de passe ou code élève':'Mot de passe'}<div style={{position:"relative"}}><input type={showPassword?"text":"password"} value={password} onChange={e=>setPassword(e.target.value)} minLength={8} required style={{paddingRight:48,width:"100%"}}/><button type="button" onClick={()=>setShowPassword(v=>!v)} aria-label={showPassword?"Masquer le mot de passe":"Afficher le mot de passe"} title={showPassword?"Masquer":"Afficher"} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",border:0,background:"transparent",cursor:"pointer",display:"flex",alignItems:"center",color:"#52627b"}}>{showPassword?<EyeOff size={21}/>:<Eye size={21}/>}</button></div></label>{mode==='signup'&&accountType==='teacher'&&<small className="muted auth-domain-hint">Phase pilote : adresse @ac-aix-marseille.fr obligatoire, sauf comptes de test expressément autorisés.</small>}
+        {mode==='login'&&loginRole==='teacher'&&<button type="button" className="link-btn forgot-link" onClick={forgotPassword}>Mot de passe oublié ?</button>}
+        {message && <div className="form-message" role="status" style={{whiteSpace:'pre-line'}}>{message}</div>}
+        <button className="btn primary wide" disabled={busy}>{busy ? 'Patiente…' : mode === 'login' ? 'Se connecter' : 'Créer le compte'}</button>
+        {(mode==='signup'||loginRole==='teacher')&&<button type="button" className="link-btn" onClick={()=>setMode(mode==='login'?'signup':'login')}>
+          {mode === 'login' ? "Enseignant : créer un compte" : "J'ai déjà un compte"}
+        </button>}
+      </form>
+    </div>
+  )
+}
+
+function PasswordRecovery({onDone}) {
+  const [password,setPassword]=useState('')
+  const [confirmPassword,setConfirmPassword]=useState('')
+  const [message,setMessage]=useState('')
+  const [busy,setBusy]=useState(false)
+  async function submit(e){
+    e.preventDefault()
+    if(password.length<8){setMessage('Choisissez un mot de passe d’au moins 8 caractères.');return}
+    if(password!==confirmPassword){setMessage('Les deux mots de passe ne correspondent pas.');return}
+    setBusy(true)
+    const {error}=await supabase.auth.updateUser({password})
+    setBusy(false)
+    if(error)setMessage(toastError(error));else{setMessage('Mot de passe modifié.');setTimeout(onDone,600)}
+  }
+  return <div className="center-screen"><form className="auth-card" onSubmit={submit}><h2>Nouveau mot de passe</h2><p className="muted">Choisissez un nouveau mot de passe pour votre compte ProPilot.</p><label>Nouveau mot de passe<input type="password" minLength={8} value={password} onChange={e=>setPassword(e.target.value)} required/></label><label>Confirmer le mot de passe<input type="password" minLength={8} value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} required/></label>{message&&<div className="form-message">{message}</div>}<button className="btn primary wide" disabled={busy}>{busy?'Enregistrement…':'Enregistrer le nouveau mot de passe'}</button></form></div>
+}
+
+function UnlinkedAccount({ onSignOut, onRefresh }) {
+  return <div className="center-screen card-stack"><AlertCircle size={48}/><h2>Compte non rattaché</h2><p>Ce compte n’est pas encore associé à un profil enseignant ou à un élève autorisé.</p><div className="row"><button className="btn" onClick={onRefresh}>Réessayer</button><button className="btn ghost" onClick={onSignOut}>Se déconnecter</button></div></div>
+}
+
+function StudentAccessSuspended({state,onSignOut,onRefresh}) {
+  return <div className="center-screen card-stack"><EyeOff size={48}/><h2>Accès élève désactivé</h2><p>L’accès à votre espace pour <strong>{state?.class_name||'votre classe'}</strong> est actuellement désactivé. Votre enseignant peut le réactiver depuis ProPilot.</p><div className="row"><button className="btn" onClick={onRefresh}>Vérifier à nouveau</button><button className="btn ghost" onClick={onSignOut}>Se déconnecter</button></div></div>
+}
+
+function PendingApproval({ profile, onSignOut, onRefresh }) {
+  const status=profile.access_status||'pending'
+  const title=status==='rejected'?'Demande d’accès refusée':status==='suspended'?'Compte suspendu':"Compte en attente d'approbation"
+  const description=status==='rejected'?"Votre demande d'accès à ProPilot 2026 n'a pas été acceptée. Contactez l'administrateur pour toute question.":status==='suspended'?"Votre accès à ProPilot 2026 est temporairement suspendu. Contactez l'administrateur.":"Votre demande d'accès a bien été enregistrée. Un administrateur doit approuver votre compte avant l'accès aux classes."
+  return (
+    <div className="center-screen card-stack">
+      <Clock3 size={48}/>
+      <h2>{title}</h2>
+      <p>{profile.display_name || profile.email}</p>
+      <p>{description}</p>
+      <div className="row"><button className="btn" onClick={onRefresh}>Actualiser</button><button className="btn ghost" onClick={onSignOut}>Se déconnecter</button></div>
+    </div>
+  )
+}
+
+function Sidebar({ profile, page, onPage, onSignOut }) {
+  return (
+    <aside className="sidebar">
+      <div className="logo"><GraduationCap/><div><strong>ProPilot</strong><span>Eco-Gestion</span></div></div>
+      <nav>
+        <button className={page==='dashboard'?'active':''} onClick={()=>onPage('dashboard')}><LayoutDashboard/>Tableau de bord</button>
+        <button className={page==='feedback'?'active':''} onClick={()=>onPage('feedback')}><AlertCircle/>Bugs / RETEX</button>
+        {profile.role==='admin' && <button className={page==='admin'?'active':''} onClick={()=>onPage('admin')}><ShieldCheck/>Administration</button>}
+      </nav>
+      <div className="sidebar-bottom">
+        <div className="mini-profile"><div className="avatar">{(profile.display_name || profile.email || '?')[0].toUpperCase()}</div><div><strong>{profile.display_name || 'Enseignant'}</strong><span>{profile.role}</span></div></div>
+        <button className="logout" onClick={onSignOut}><LogOut/>Déconnexion</button>
+      </div>
+    </aside>
+  )
+}
+
+function Topbar({ profile, classes=[], activeClass=null, onSelectClass }) {
+  const activeClasses=classes.filter(c=>(c.status||'active')==='active')
+  return <header className="topbar"><div><h2>Bonjour {profile.display_name || ''}</h2><p>Votre espace de suivi PLP Éco-gestion.</p></div><div className="topbar-actions">{activeClasses.length>0&&<label className="class-switcher"><span>Classe</span><select value={activeClass?.id||''} onChange={e=>e.target.value&&onSelectClass?.(e.target.value)}><option value="">Choisir une classe…</option>{activeClasses.map(c=><option key={c.id} value={c.id}>{c.name} — {c.pp_diploma_packs?.short_name||c.diploma_code}</option>)}</select></label>}<div className="status-pill"><UserCheck size={17}/>Compte approuvé</div></div></header>
+}
+
+
+function EstablishmentIdentity({ establishment }) {
+  const [logo,setLogo]=useState('')
+  useEffect(()=>{
+    let active=true
+    if(!establishment?.logo_path){setLogo('');return}
+    supabase.storage.from('pp-establishment-logos').createSignedUrl(establishment.logo_path,3600).then(({data})=>{if(active)setLogo(data?.signedUrl||'')})
+    return ()=>{active=false}
+  },[establishment?.logo_path])
+  if(!establishment)return null
+  return <div className="establishment-identity">{logo?<img src={logo} alt="Logo établissement"/>:<div className="establishment-logo-placeholder"><School/></div>}<div><strong>{establishment.name}</strong><span>{establishment.city||''}</span></div></div>
+}
+
+function InstitutionalIdentity({establishment}) {
+  return <div className="institutional-identity"><div className="academy-brand"><img src="/ProPilot-Eco-Gestion/academie-aix-marseille.svg" alt="Académie d’Aix-Marseille" onError={e=>{e.currentTarget.style.display='none';if(e.currentTarget.nextElementSibling)e.currentTarget.nextElementSibling.style.display='block'}}/><span>Académie d’Aix-Marseille</span></div><div className="institutional-divider"/><EstablishmentIdentity establishment={establishment}/></div>
+}
+
+function Dashboard({ classes, pendingInvites=[], onAcceptInvite, onDeclineInvite, onOpenClass, onCreated }) {
+  const [open, setOpen] = useState(false)
+  const [studentCount, setStudentCount] = useState(0)
+  const [showArchived,setShowArchived]=useState(false)
+  const activeClasses=classes.filter(c=>(c.status||'active')==='active')
+  const archivedClasses=classes.filter(c=>c.status==='archived')
+
+  useEffect(()=>{
+    if (!activeClasses.length) { setStudentCount(0); return }
+    Promise.all(activeClasses.map(c=>supabase.from('pp_students').select('*',{count:'exact',head:true}).eq('class_id',c.id)))
+      .then(results=>setStudentCount(results.reduce((n,r)=>n+(r.count||0),0)))
+  },[classes])
+
+  function classCard(c){
+    const archived=c.status==='archived'
+    return <button key={c.id} className={`class-card ${archived?'archived-card':''}`} onClick={()=>onOpenClass(c)}><div className="class-card-top"><div className="row"><span className="class-pill">{c.pp_diploma_packs?.short_name || c.diploma_code}</span>{archived&&<span className="badge muted"><Archive size={13}/> Archivée</span>}</div><ChevronRight/></div><h3>{c.name}</h3><p>{c.level_label} • {c.school_year}</p><small>Organisation : {c.organization_mode}</small></button>
+  }
+
+  return (
+    <section className="content-section">
+      <div className="section-head"><div><h1>Mes classes</h1><p>Gérez les élèves, progressions, évaluations, PFMP et CCF.</p></div><button className="btn primary" onClick={()=>setOpen(true)}><Plus/>Créer une classe</button></div>
+      <div className="stats-grid">
+        <Stat icon={<School/>} value={activeClasses.length} label="Classes actives"/>
+        <Stat icon={<Users/>} value={studentCount} label="Élèves suivis"/>
+        <Stat icon={<BookOpenCheck/>} value="162" label="Compétences intégrées"/>
+        <Stat icon={<ClipboardCheck/>} value="10" label="Épreuves configurées"/>
+      </div>
+      {pendingInvites.length>0&&<div className="panel invite-inbox"><div className="panel-head"><div><h3><BellRing size={23} aria-hidden="true"/> Invitations de collaboration</h3><p>Une classe partagée ne rejoint votre espace qu'après votre accord.</p></div><span className="badge info">{pendingInvites.length} en attente</span></div><div className="cards-list">{pendingInvites.map(i=><div className="invite-card" key={i.id}><div><strong>{i.class_name}</strong><span>{i.establishment_name||'Établissement'}{i.establishment_city?` · ${i.establishment_city}`:''} · {i.school_year}</span><small>Invité par {i.inviter_name||i.inviter_email||'un collègue'} · droit proposé : {{owner:'Co-propriétaire',editor:'Éditeur',viewer:'Lecture seule'}[i.member_role]||i.member_role}</small></div><div className="row wrap"><button className="btn ghost" onClick={()=>onDeclineInvite?.(i.id)}>Refuser</button><button className="btn primary" onClick={()=>onAcceptInvite?.(i.id)}>Accepter</button></div></div>)}</div></div>}
+      {activeClasses.length === 0 ? (
+        <div className="empty-state"><School size={52}/><h3>Aucune classe active</h3><p>Créez votre première classe ou consultez les archives.</p><button className="btn primary" onClick={()=>setOpen(true)}><Plus/>Créer ma première classe</button></div>
+      ) : <div className="class-grid">{activeClasses.map(classCard)}</div>}
+      {archivedClasses.length>0&&<div className="archive-section"><button className="btn ghost" onClick={()=>setShowArchived(v=>!v)}><Archive/>{showArchived?'Masquer':'Afficher'} les classes archivées ({archivedClasses.length})</button>{showArchived&&<div className="class-grid archived-grid">{archivedClasses.map(classCard)}</div>}</div>}
+      {open && <SetupWizard onClose={()=>setOpen(false)} onCreated={(classId)=>{setOpen(false); onCreated?.(classId)}} />}
+    </section>
+  )
+}
+
+function Stat({ icon, value, label }) { return <div className="stat-card"><div className="stat-icon">{icon}</div><div><strong>{value}</strong><span>{label}</span></div></div> }
+
+function CreateClassModal({ onClose, onCreated }) {
+  const [packs, setPacks] = useState([])
+  const [form, setForm] = useState({ name:'', school_year:'2026-2027', level_label:'1re', diploma_code:'MCVA', organization_mode:'solo' })
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(()=> { supabase.from('pp_diploma_packs').select('code,short_name').eq('active',true).order('sort_order').then(({data})=>setPacks(data||[])) },[])
+  async function submit(e) {
+    e.preventDefault(); setBusy(true); setError('')
+    try {
+      const {data:{user},error:authError} = await supabase.auth.getUser()
+      if(authError||!user)throw new Error('Session expirée. Reconnectez-vous avant de créer une classe.')
+      const {error} = await supabase.from('pp_classes').insert({ ...form, enabled_modules:{progression:true,students:true,evaluations:true,pfmp:true,synthesis:true,reports:true,student_portal:true,ccf:form.diploma_code!=='2MRC'}, owner_id:user.id })
+      if(error)throw error
+      await onCreated()
+    } catch(err) {
+      setError(toastError(err)||'Création impossible. Réessayez après actualisation.')
+    } finally {setBusy(false)}
+  }
+  return <Modal title="Créer une classe" onClose={onClose}><form className="form-grid" onSubmit={submit}>
+    <label>Nom de la classe<input value={form.name} onChange={e=>{const two=/^2\s*MRC/i.test(e.target.value.trim());setForm({...form,name:e.target.value,...(two?{diploma_code:'2MRC',level_label:'2de'}:{})})}} placeholder="Ex. 2MRC1" required/></label>
+    <label>Année scolaire<input value={form.school_year} onChange={e=>setForm({...form,school_year:e.target.value})} required/></label>
+    <label>Niveau<select value={form.level_label} onChange={e=>setForm({...form,level_label:e.target.value})}><option>2de</option><option>1re</option><option>Terminale</option></select></label>
+    <label>Diplôme<select value={form.diploma_code} onChange={e=>setForm({...form,diploma_code:e.target.value})}>{packs.map(p=><option key={p.code} value={p.code}>{p.short_name}</option>)}</select></label>
+    <label>Organisation<select value={form.organization_mode} onChange={e=>setForm({...form,organization_mode:e.target.value})}><option value="solo">Seul</option><option value="binome">Binôme</option><option value="trinome">Trinôme</option></select></label>
+    {error && <div className="form-message">{error}</div>}
+    <div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary" disabled={busy}><Save/>{busy?'Création…':'Créer'}</button></div>
+  </form></Modal>
+}
+
+function ClassWorkspace({ klass, profile, classes=[], onSelectClass, onSignOut, onBack, onClassUpdated }) {
+  const [tab,setTab]=useState(klass.enabled_modules?.progression===false?'students':'progression')
+  const [access,setAccess]=useState({can_view:true,can_edit:false,can_manage:false,is_primary_owner:false,member_role:null})
+  const [teamNames,setTeamNames]=useState([])
+  const [addRequestToken,setAddRequestToken]=useState(0)
+
+  useEffect(()=>{
+    supabase.rpc('pp_get_class_access',{target_class_id:klass.id}).then(({data})=>{if(data)setAccess(data)})
+    Promise.all([
+      supabase.from('pp_class_members').select('user_id,member_role').eq('class_id',klass.id),
+      supabase.auth.getUser()
+    ]).then(async ([members])=>{
+      const teaching=(members.data||[]).filter(m=>m.member_role!=='viewer')
+      const ids=[...new Set(teaching.map(m=>m.user_id))]
+      if(!ids.length){setTeamNames(profile?.display_name?[profile.display_name]:[]);return}
+      const {data}=await supabase.from('pp_profiles').select('user_id,display_name,email').in('user_id',ids)
+      const byId=Object.fromEntries((data||[]).map(x=>[x.user_id,x]))
+      setTeamNames(teaching.map(m=>byId[m.user_id]?.display_name||String(byId[m.user_id]?.email||'').split('@')[0]).filter(Boolean))
+    })
+  },[klass.id,profile?.display_name])
+
+  useEffect(()=>{
+    document.body.classList.add('class-reference-mode')
+    return ()=>document.body.classList.remove('class-reference-mode')
+  },[])
+

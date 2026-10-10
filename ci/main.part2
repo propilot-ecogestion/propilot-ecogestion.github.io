@@ -1,0 +1,632 @@
+  useEffect(()=>{if(!klass.enabled_modules?.[tab]&&['progression','students','evaluation','pfmp','ccf'].includes(tab))setTab('progression')},[klass.id])
+
+  const modules=klass.enabled_modules||{}
+  const tabs = [
+    ...(modules.progression!==false?[['progression','Progression',BookOpenCheck]]:[]),
+    ...(modules.students!==false?[['students','Élèves',Users]]:[]),
+    ...(modules.evaluations!==false?[['evaluation','Évaluations',ClipboardCheck]]:[]),
+    ...(modules.pfmp!==false?[['pfmp','PFMP',BriefcaseBusiness]]:[]),
+    ...(modules.synthesis!==false?[['synthesis','Synthèse compétences',BarChart3]]:[]),
+    ...(klass.diploma_code!=='2MRC'&&modules.ccf!==false?[['ccf','CCF',ListChecks]]:[]),
+    ...(modules.student_portal!==false?[['studentAccess','Accès élève',Eye]]:[]),
+  ]
+  const readOnly=!access.can_edit
+  const diplomaTitle=klass.diploma_code==='MCVA'||klass.diploma_code==='MCVB'?'Bac Pro MCV':(klass.pp_diploma_packs?.short_name||klass.diploma_code)
+  const diplomaSubtitle=klass.diploma_code==='MCVA'?'Bac Pro MCV – Option A':klass.diploma_code==='MCVB'?'Bac Pro MCV – Option B':(klass.pp_diploma_packs?.short_name||klass.diploma_code)
+  const teacherTitle=(teamNames.length?teamNames:[profile?.display_name||'Enseignant']).join(' - ')
+  const activeClasses=classes.filter(c=>(c.status||'active')==='active')
+
+  function addContext(){setTab('progression');setAddRequestToken(v=>v+1)}
+  function evaluateContext(item){localStorage.setItem(`pp_last_context_${klass.id}`,item.id);setTab('evaluation')}
+
+  return (
+    <section className="reference-class-shell teacher-personal-workspace">
+      <header className="reference-class-header">
+        <div className="reference-brand-zone">
+          <InstitutionalIdentity establishment={klass.pp_establishments}/>
+          <div className="reference-title-zone">
+            <h1>Progression pédagogique partagée · {diplomaTitle} · {teacherTitle}</h1>
+            <p><b>{klass.pp_establishments?.name||'Établissement'}</b>{klass.pp_establishments?.city?` · ${klass.pp_establishments.city}`:''} · {diplomaSubtitle} · {klass.school_year}</p>
+          </div>
+        </div>
+        <div className="reference-header-actions no-print">
+          {activeClasses.length>1&&<select className="reference-class-switcher" value={klass.id} onChange={e=>onSelectClass?.(e.target.value)}>{activeClasses.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>}
+          <button className="reference-user-pill" type="button"><UserCheck/>{profile?.display_name||'Enseignant'}</button>
+          <button className="reference-logout" onClick={onSignOut}>Se déconnecter</button>
+          {access.can_manage&&<button className="reference-settings-btn" title="Réglages de la classe" onClick={()=>setTab('settings')}><Settings/></button>}
+          {!readOnly&&<button className="reference-add-btn" onClick={addContext}><Plus/> Ajouter</button>}
+        </div>
+      </header>
+      <nav className="reference-primary-tabs no-print">
+        {tabs.map(([key,label,Icon])=><button key={key} className={`reference-tab reference-tab-${key} ${tab===key?'active':''}`} onClick={()=>setTab(key)}><Icon size={18}/>{label}</button>)}
+      </nav>
+      <div className="reference-class-body">
+        <div className="reference-class-meta no-print"><button className="reference-back" onClick={onBack}><ArrowLeft/>Mes classes</button>{readOnly&&<span className="badge muted"><Eye size={14}/> Lecture seule</span>}{access.member_role&&<span className="badge info">{access.is_primary_owner?'Propriétaire principal':({owner:'Co-propriétaire',editor:'Éditeur',viewer:'Lecture seule'}[access.member_role]||access.member_role)}</span>}</div>
+        {tab==='students' && <StudentsTab klass={klass} readOnly={readOnly} isPrimaryOwner={access.is_primary_owner} onClassDeleted={onBack}/>} 
+        {tab==='synthesis' && <SynthesisCompetenciesTab klass={klass} readOnly={readOnly}/>} 
+        {tab==='progression' && <PersonalProgression klass={klass} readOnly={readOnly} addRequestToken={addRequestToken} onEvaluateContext={evaluateContext}/>} 
+        {tab==='evaluation' && <QuickEvaluationTab klass={klass} readOnly={readOnly}/>} 
+        {tab==='pfmp' && <PfmpClassTab klass={klass} readOnly={readOnly}/>} 
+        {tab==='ccf' && klass.diploma_code!=='2MRC' && <CcfClassTab klass={klass} readOnly={readOnly}/>} 
+        {tab==='studentAccess' && <StudentAccessTab klass={klass} readOnly={readOnly}/>} 
+        {tab==='settings' && access.can_manage && <ClassSettingsTab klass={klass} onArchived={onBack} onClassUpdated={onClassUpdated}/>} 
+      </div>
+    </section>
+  )
+}
+
+function SynthesisCompetenciesTab({klass,readOnly=false}){
+  return <SynthesisV14 klass={klass} readOnly={readOnly}/>
+  const [sub,setSub]=useState('summary')
+  return <div className="reference-synthesis-shell"><div className="reference-secondary-tabs no-print"><button className={sub==='summary'?'active':''} onClick={()=>setSub('summary')}><BarChart3/>Synthèse de la classe</button><button className={sub==='positioning'?'active':''} onClick={()=>setSub('positioning')}><CheckCircle2/>Positionnement final</button></div>{sub==='summary'?<ClassSynthesisTab klass={klass}/>:<FinalPositioningTab klass={klass} readOnly={readOnly}/>}</div>
+}
+
+function StudentAccessTab({klass,readOnly=false}){
+  const [students,setStudents]=useState([])
+  const [selectedId,setSelectedId]=useState('')
+  const [form,setForm]=useState(null)
+  const [emailDraft,setEmailDraft]=useState('')
+  const [busy,setBusy]=useState(false)
+  const [generating,setGenerating]=useState(false)
+  const [issued,setIssued]=useState(null)
+  const [message,setMessage]=useState('')
+  async function load(){
+    const {data,error}=await supabase.from('pp_students').select('*').eq('class_id',klass.id).order('last_name')
+    if(error){setMessage(toastError(error));return}
+    setStudents(data||[])
+    setSelectedId(prev=>(data||[]).some(x=>x.id===prev)?prev:(data?.[0]?.id||''))
+  }
+  useEffect(()=>{load()},[klass.id])
+  const selected=students.find(s=>s.id===selectedId)
+  useEffect(()=>{setIssued(null);setEmailDraft(selected?.email||'')},[selectedId,selected?.email])
+  useEffect(()=>{setForm(selected?{access_enabled:!!selected.access_enabled,visibility:{...(selected.visibility||{})}}:null);setMessage('')},[selectedId,selected?.updated_at,selected?.access_enabled])
+  function setVisibility(key){
+    if(readOnly||!form)return
+    const v={...form.visibility,[key]:!form.visibility[key]}
+    if(key==='teacher_comments'&&v.teacher_comments)v.teacher_positions=true
+    if(key==='teacher_positions'&&!v.teacher_positions)v.teacher_comments=false
+    setForm({...form,visibility:v})
+  }
+  async function save(){
+    if(!selected||!form||readOnly||busy)return
+    const email=emailDraft.trim().toLowerCase()
+    if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){setMessage('Saisissez une adresse e-mail valide.');return}
+    if(selected.student_user_id&&email!==String(selected.email||'').trim().toLowerCase()){setMessage('Adresse associée à un compte élève existant : contactez l’administrateur pour la modifier.');return}
+    setBusy(true);setMessage('')
+    const {error}=await supabase.from('pp_students').update({email:email||null,access_enabled:form.access_enabled,visibility:form.visibility}).eq('id',selected.id).eq('class_id',klass.id)
+    setBusy(false)
+    if(error){setMessage(toastError(error));return}
+    setMessage('Droits de consultation enregistrés.')
+    await load()
+  }
+  async function generateCode(){
+    if(!selected||readOnly||generating)return
+    if(!selected.email){setMessage('Renseignez puis enregistrez l’adresse e-mail ci-dessus.');return}
+    if(!form?.access_enabled||!selected.access_enabled){setMessage('Enregistrez d’abord l’activation de l’accès élève.');return}
+    if(selected.student_user_id&&!window.confirm('Renouveler le code de connexion de cet élève ? L’ancien mot de passe ne permettra plus de nouvelles connexions.'))return
+    setIssued(null);setMessage('');setGenerating(true)
+    const {data,error}=await supabase.functions.invoke('generate-student-code',{body:{student_id:selected.id}})
+    setGenerating(false)
+    if(error||!data?.code){let detail=data?.error||'';if(!detail&&error?.context){try{const body=await error.context.json();detail=body?.error||body?.message||''}catch(_){}}setMessage(detail||error?.message||'Génération impossible.');return}
+    setIssued({email:data.email,code:data.code})
+    setMessage('Code généré. Remettez-le directement à l’élève et conservez-le en lieu sûr.')
+    await load()
+  }
+  const modules=[['self_assessment','Auto-évaluation'],['teacher_positions','Positionnements professeur'],['teacher_comments','Commentaires professeur'],['pfmp','Débriefs PFMP'],['synthesis','Synthèse de fin de cycle'],...(klass.diploma_code==='2MRC'?[]:[['ccf','Dépôts et suivi CCF']]),['progression','Progression'],['reports','Rapports']]
+  return <section className="panel reference-access-panel" style={{background:'#fff',borderRadius:18,padding:18}}>
+    <div className="panel-head"><div><h2 style={{margin:0}}>Accès élève & visibilité</h2><p>Le professeur choisit ce que l’élève peut consulter. L’auto-évaluation peut rester accessible sans publier les commentaires ou les positionnements professeur.</p></div></div>
+    <div className="access-v14-selectors"><label>Classe<input value={klass.name+' · '+klass.school_year} disabled/></label><label>Élève<select value={selectedId} onChange={e=>setSelectedId(e.target.value)}>{students.map(s=><option key={s.id} value={s.id}>{s.last_name} {s.first_name}</option>)}</select></label></div>
+    {selected&&form?<div className="access-v14-detail"><h3>{selected.last_name} {selected.first_name}</h3>
+      <div className="access-v14-notice"><label style={{display:'block',fontWeight:700}}>Identifiant élève — Adresse e-mail<input type="email" placeholder="exemple@domaine.fr" value={emailDraft} disabled={readOnly||!!selected.student_user_id} onChange={e=>setEmailDraft(e.target.value)} style={{width:'100%',maxWidth:430,marginTop:7,background:'#fff'}}/></label>{!emailDraft.trim()&&<p style={{color:'#dc2626',fontWeight:700,marginTop:7}}>Adresse e-mail à renseigner pour activer la connexion élève.</p>}{emailDraft.trim()!==String(selected.email||'').trim()&&<p style={{color:'#b45309',marginTop:7}}>Enregistrez les droits pour sauvegarder cette adresse avant de générer un code.</p>}<p>L’élève se connecte avec ses identifiants personnels. Ses droits sont contrôlés côté serveur.</p></div>
+      <label className="access-v14-toggle"><input type="checkbox" disabled={readOnly} checked={form.access_enabled} onChange={e=>setForm({...form,access_enabled:e.target.checked})}/> Autoriser l’accès élève</label>
+      <h4>Ce que l’élève peut voir</h4>
+      <div className="access-v14-modules">{modules.map(([key,label])=><label key={key}><input type="checkbox" disabled={readOnly} checked={!!form.visibility[key]} onChange={()=>setVisibility(key)}/>{label}</label>)}</div>
+      <div className="row wrap"><button className="btn primary" disabled={readOnly||busy} onClick={save}><Save size={16}/>{busy?'Enregistrement…':'Enregistrer les droits'}</button><button className="btn" type="button" disabled={readOnly||generating||!selected.email||!selected.access_enabled||emailDraft.trim().toLowerCase()!==String(selected.email||'').trim().toLowerCase()} onClick={generateCode}><ShieldCheck size={16}/>{generating?'Génération…':selected.student_user_id?'Renouveler le code élève':'Générer le code élève'}</button></div>
+      {issued&&<div className="access-v14-notice" role="status"><strong>Identifiants à remettre à l’élève</strong><p>Adresse : {issued.email}</p><p>Code de connexion : <code style={{fontSize:18,fontWeight:800,letterSpacing:1}}>{issued.code}</code></p><button className="btn small" type="button" onClick={()=>navigator.clipboard?.writeText(issued.code)}>Copier le code</button><p>Ce code n’est affiché qu’une seule fois. Il remplace le mot de passe lors de la connexion à ProPilot.</p></div>}
+      <div className="access-v14-notice">L’élève se connecte avec son adresse e-mail et le code communiqué (dans le champ « Mot de passe »). En cas de perte, générez un nouveau code.</div>
+    </div>:<div className="small-empty">Aucun élève dans cette classe.</div>}
+    {message&&<div className="form-message" role="status">{message}</div>}
+    <p style={{fontSize:12,color:"#64748b",margin:"12px 2px 0",lineHeight:1.5}}><strong>À suivre dans cet ordre :</strong> 1. Renseigner l’adresse e-mail ci-dessus → 2. Autoriser l’accès élève → 3. Enregistrer les droits → 4. Générer le code élève.</p>
+  </section>
+}
+
+function StudentsTab({ klass, readOnly=false, isPrimaryOwner=false, onClassDeleted }) {
+  const [students,setStudents]=useState([])
+  const [q,setQ]=useState('')
+  const [showAdd,setShowAdd]=useState(false)
+  const [showImport,setShowImport]=useState(false)
+  const [selected,setSelected]=useState(null)
+  const [editSelected,setEditSelected]=useState(false)
+  const [deletingClass,setDeletingClass]=useState(false)
+  const [deleteError,setDeleteError]=useState('')
+  async function deleteClass(){
+    if(!isPrimaryOwner||deletingClass)return
+    const confirmation=window.prompt(`Suppression définitive de la classe ${klass.name} et de ses données associées. Cette action est irréversible. Pour confirmer, saisissez exactement : ${klass.name}`)
+    if(confirmation!==klass.name)return
+    setDeletingClass(true);setDeleteError('')
+    const {error}=await supabase.from('pp_classes').delete().eq('id',klass.id).eq('owner_id',klass.owner_id)
+    setDeletingClass(false)
+    if(error){setDeleteError(toastError(error));return}
+    onClassDeleted?.()
+  }
+  async function load() { const {data}=await supabase.from('pp_students').select('*').eq('class_id',klass.id).order('last_name'); setStudents(data||[]) }
+  useEffect(()=>{load()},[klass.id])
+  const filtered=students.filter(s=>`${s.last_name} ${s.first_name}`.toLowerCase().includes(q.toLowerCase()))
+  if (selected) return <StudentDetail klass={klass} student={selected} readOnly={readOnly} initialEdit={editSelected} onBack={()=>{setSelected(null);setEditSelected(false);load()}} />
+  return <>
+    <div className="toolbar wrap"><div className="search"><Search size={18}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Rechercher un élève"/></div><div className="row">{!readOnly&&<><button className="btn" onClick={()=>setShowImport(true)}><Upload/>Importer CSV</button><button className="btn primary" onClick={()=>setShowAdd(true)}><Plus/>Ajouter un élève</button></>}{isPrimaryOwner&&<button type="button" className="btn danger" onClick={deleteClass} disabled={deletingClass} style={{borderColor:"#ff8d9d",background:"#fff4f5",color:"#c90037",fontWeight:800}}><Trash2 size={16}/>{deletingClass?"Suppression…":"Supprimer la classe"}</button>}</div></div>{deleteError&&<div role="alert" className="error-box">{deleteError}</div>}
+    <div className="propilot-student-cards" style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,300px),1fr))',gap:12}}>{filtered.map(s=><article key={s.id} style={{border:'1px solid #dce5f2',borderRadius:16,padding:'14px 16px',background:'#fff',display:'flex',flexDirection:'column',gap:8,minWidth:0}}><div style={{minWidth:0}}><strong style={{fontSize:16,color:'#152540'}}>{s.last_name} {s.first_name}</strong><div style={{fontSize:12,color:'#64748b',marginTop:3,overflowWrap:'anywhere'}}>{[s.group_name,s.email].filter(Boolean).join(' · ')}</div></div><div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{!readOnly&&<button className="btn small" onClick={()=>{setEditSelected(true);setSelected(s)}}><Pencil size={14}/> Modifier</button>}<button className="btn small" onClick={()=>{setEditSelected(false);setSelected(s)}}>Synthèse <ChevronRight size={14}/></button></div></article>)}</div>{filtered.length===0 && <div className="small-empty">Aucun élève.</div>}
+    {!readOnly && showAdd && <AddStudentModal klass={klass} onClose={()=>setShowAdd(false)} onCreated={()=>{setShowAdd(false);load()}}/>}
+    {!readOnly && showImport && <ImportStudentsModal klass={klass} onClose={()=>setShowImport(false)} onImported={()=>{setShowImport(false);load()}}/>}
+  </>
+}
+
+function StatusBadge({ok,children}) { return <span className={ok?'badge success':'badge muted'}>{children}</span> }
+
+function AddStudentModal({klass,onClose,onCreated}) {
+  const [f,setF]=useState({last_name:'',first_name:'',group_name:'',email:'',access_enabled:false})
+  const [error,setError]=useState('')
+  async function submit(e){ e.preventDefault(); const {error}=await supabase.from('pp_students').insert({...f,class_id:klass.id,email:f.email||null}); if(error)setError(toastError(error)); else onCreated() }
+  return <Modal title="Ajouter un élève" onClose={onClose}><form className="form-grid" onSubmit={submit}>
+    <label>Nom<input value={f.last_name} onChange={e=>setF({...f,last_name:e.target.value.toUpperCase()})} required/></label><label>Prénom<input value={f.first_name} onChange={e=>setF({...f,first_name:e.target.value})} required/></label><label>Groupe<input value={f.group_name} onChange={e=>setF({...f,group_name:e.target.value})} placeholder="G1, G2…"/></label><label>E-mail élève<input type="email" value={f.email} onChange={e=>setF({...f,email:e.target.value})}/></label><label className="check"><input type="checkbox" checked={f.access_enabled} onChange={e=>setF({...f,access_enabled:e.target.checked})}/>Activer l'espace élève</label>{error&&<div className="form-message">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary">Ajouter</button></div>
+  </form></Modal>
+}
+
+function ImportStudentsModal({klass,onClose,onImported}) {
+  const [preview,setPreview]=useState([])
+  const [existing,setExisting]=useState([])
+  const [skipped,setSkipped]=useState([])
+  const [error,setError]=useState('')
+  const [busy,setBusy]=useState(false)
+  useEffect(()=>{supabase.from('pp_students').select('last_name,first_name,email').eq('class_id',klass.id).then(({data})=>setExisting(data||[]))},[klass.id])
+  function isDuplicate(row){
+    const email=(row.email||'').trim().toLowerCase()
+    return existing.some(s=>(email&&s.email?.trim().toLowerCase()===email)||(!email&&s.last_name?.trim().toLowerCase()===row.last_name.trim().toLowerCase()&&s.first_name?.trim().toLowerCase()===row.first_name.trim().toLowerCase()))
+  }
+  function parseFile(file){
+    setError('');setSkipped([])
+    const reader=new FileReader()
+    reader.onload=()=>{
+      const text=String(reader.result||'').replace(/^\uFEFF/,'')
+      const delim=detectCsvDelimiter(text)
+      const rows=parseCsvText(text,delim)
+      if(!rows.length){setError('Fichier vide.');return}
+      const header=rows[0].map(h=>h.trim().toLowerCase())
+      const hasHeader=header.some(h=>['nom','last_name','prenom','prénom','first_name'].includes(h))
+      const body=hasHeader?rows.slice(1):rows
+      const idx=(names, fallback)=>{const i=header.findIndex(h=>names.includes(h));return i>=0?i:fallback}
+      const ni=hasHeader?idx(['nom','last_name'],0):0, pi=hasHeader?idx(['prenom','prénom','first_name'],1):1, gi=hasHeader?idx(['groupe','group','group_name'],2):2, ei=hasHeader?idx(['email','e-mail','mail'],3):3
+      const parsed=body.filter(r=>r[ni]&&r[pi]).map(r=>({last_name:r[ni].toUpperCase(),first_name:r[pi],group_name:r[gi]||null,email:r[ei]||null,access_enabled:false,class_id:klass.id}))
+      const seen=new Set(),keep=[],skip=[]
+      for(const row of parsed){
+        const key=row.email?`e:${row.email.toLowerCase()}`:`n:${row.last_name.toLowerCase()}|${row.first_name.toLowerCase()}`
+        if(seen.has(key)||isDuplicate(row)){skip.push(row);continue}
+        seen.add(key);keep.push(row)
+      }
+      setPreview(keep);setSkipped(skip)
+      if(!keep.length&&skip.length)setError('Tous les élèves détectés semblent déjà présents dans la classe.')
+    }
+    reader.readAsText(file,'UTF-8')
+  }
+  async function importRows(){
+    if(!preview.length)return
+    setBusy(true)
+    const {error}=await supabase.from('pp_students').insert(preview)
+    setBusy(false)
+    if(error)setError(toastError(error)); else onImported()
+  }
+  return <Modal title="Importer des élèves (CSV)" onClose={onClose}><div className="stack"><p className="muted">Colonnes acceptées : <strong>nom ; prénom ; groupe ; email</strong>. Les doublons évidents sont ignorés avant l’import.</p><input type="file" accept=".csv,text/csv" onChange={e=>e.target.files?.[0]&&parseFile(e.target.files[0])}/>{error&&<div className="form-message">{error}</div>}{(preview.length>0||skipped.length>0)&&<><div className="preview-box"><strong>{preview.length} élève(s) à importer</strong>{preview.slice(0,6).map((r,i)=><span key={i}>{r.last_name} {r.first_name} {r.group_name?`— ${r.group_name}`:''}</span>)}{preview.length>6&&<span>…</span>}{skipped.length>0&&<span className="muted">{skipped.length} doublon(s) ignoré(s).</span>}</div><div className="modal-actions"><button className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary" disabled={busy||!preview.length} onClick={importRows}><Upload/>{busy?'Import…':`Importer ${preview.length}`}</button></div></>}</div></Modal>
+}
+
+function StudentDetail({ klass, student, readOnly=false, initialEdit=false, onBack }) {
+  const [tab,setTab]=useState('summary')
+  const [settings,setSettings]=useState({note_enabled:true,note_mapping:{N:5,D:10,A:15,E:20},synthesis_mode:'latest_per_competency'})
+  const [evaluations,setEvaluations]=useState([])
+  const [selfEvaluations,setSelfEvaluations]=useState([])
+  const [pfmpPeriods,setPfmpPeriods]=useState([])
+  const [pfmpDebriefs,setPfmpDebriefs]=useState([])
+  const [examResults,setExamResults]=useState([])
+  const [exams,setExams]=useState([])
+  const [documents,setDocuments]=useState([])
+  const [ccfRequirements,setCcfRequirements]=useState([])
+  const [finalPositions,setFinalPositions]=useState([])
+  const [editOpen,setEditOpen]=useState(initialEdit)
+  const [message,setMessage]=useState('')
+
+  async function loadAll(){
+    const [setR,evR,seR,ppR,pdR,erR,exR,docR,reqR,fpR]=await Promise.all([
+      supabase.from('pp_class_settings').select('*').eq('class_id',klass.id).maybeSingle(),
+      supabase.from('pp_teacher_evaluations').select('*').eq('student_id',student.id).order('assessed_at',{ascending:false}),
+      supabase.from('pp_self_evaluations').select('*').eq('student_id',student.id).order('assessed_at',{ascending:false}),
+      supabase.from('pp_pfmp_periods').select('*').eq('class_id',klass.id).order('sort_order'),
+      supabase.from('pp_pfmp_debriefs').select('*').eq('student_id',student.id).order('debrief_date',{ascending:false}),
+      supabase.from('pp_exam_results').select('*').eq('student_id',student.id).order('assessed_at',{ascending:false}),
+      supabase.from('pp_exams').select('*').eq('diploma_code',klass.diploma_code).order('sort_order'),
+      supabase.from('pp_documents').select('*').eq('student_id',student.id).order('uploaded_at',{ascending:false}),
+      supabase.from('pp_ccf_document_requirements').select('*').eq('class_id',klass.id).eq('active',true).order('exam_code').order('sort_order'),
+      supabase.from('pp_final_positions').select('*').eq('student_id',student.id)
+    ])
+    if(setR.data)setSettings(setR.data); setEvaluations(evR.data||[]); setSelfEvaluations(seR.data||[]); setPfmpPeriods(ppR.data||[]); setPfmpDebriefs(pdR.data||[]); setExamResults(erR.data||[]); setExams(exR.data||[]); setDocuments(docR.data||[]); setCcfRequirements(reqR.data||[]); setFinalPositions(fpR.data||[])
+  }
+  useEffect(()=>{loadAll()},[student.id])
+  const synthesis=useMemo(()=>computeSynthesis(evaluations,settings.note_mapping,settings.synthesis_mode),[evaluations,settings])
+
+  async function deleteStudent(){ if(!confirm(`Supprimer ${student.first_name} ${student.last_name} et toutes ses données ?`))return; const {error}=await supabase.from('pp_students').delete().eq('id',student.id); if(error)setMessage(toastError(error)); else onBack() }
+
+  return <>
+    <div className="student-detail-head no-print"><button className="back-link" onClick={onBack}><ArrowLeft size={17}/> Liste des élèves</button><div className="row"><button className="btn" onClick={()=>window.print()}><Printer/>Imprimer synthèse</button>{!readOnly&&<><button className="btn" onClick={()=>setEditOpen(true)}><Pencil/>Modifier</button><button className="btn danger" onClick={deleteStudent}><Trash2/>Supprimer</button></>}</div></div>
+    <div className="student-hero printable"><div className="avatar big">{student.first_name?.[0]}{student.last_name?.[0]}</div><div><h2>{student.first_name} {student.last_name}</h2><p>{klass.name} {student.group_name?`• ${student.group_name}`:''}</p><div className="row"><StatusBadge ok={student.access_enabled}>{student.access_enabled?'Espace élève activé':'Espace élève désactivé'}</StatusBadge>{student.email&&<span className="badge info">{student.email}</span>}</div></div></div>
+    {message&&<div className="form-message no-print">{message}</div>}
+    <div className="tabs scroll-tabs no-print">{[['summary','Synthèse',BarChart3],['evaluations','Évaluations',ClipboardCheck],['pfmp','PFMP',BriefcaseBusiness],['ccf','CCF',ListChecks],['documents','Documents',FolderOpen]].map(([k,l,I])=><button key={k} className={tab===k?'active':''} onClick={()=>setTab(k)}><I size={17}/>{l}</button>)}</div>
+    <div className="printable">{tab==='summary'&&<StudentSummary student={student} synthesis={synthesis} evaluations={evaluations} finalPositions={finalPositions} noteEnabled={settings.note_enabled} readOnly={readOnly} onRefresh={loadAll}/>}</div>
+    {tab==='evaluations'&&<EvaluationHistory evaluations={evaluations} selfEvaluations={selfEvaluations} readOnly={readOnly} onRefresh={loadAll}/>} 
+    {tab==='pfmp'&&<StudentPfmp student={student} periods={pfmpPeriods} debriefs={pfmpDebriefs} readOnly={readOnly} onRefresh={loadAll}/>} 
+    {tab==='ccf'&&<StudentCcf student={student} exams={exams} results={examResults} documents={documents} requirements={ccfRequirements} readOnly={readOnly} onRefresh={loadAll}/>} 
+    {tab==='documents'&&<StudentDocuments student={student} documents={documents} readOnly={readOnly} onRefresh={loadAll}/>} 
+    {!readOnly&&editOpen&&<EditStudentModal student={student} onClose={()=>setEditOpen(false)} onSaved={()=>{setEditOpen(false);onBack()}}/>}
+  </>
+}
+
+function StudentSummary({ student, synthesis, evaluations, finalPositions, noteEnabled, readOnly=false, onRefresh }) {
+  const [saving,setSaving]=useState('')
+  const [comments,setComments]=useState({})
+  const latest=synthesis.latest
+  const finalMap=Object.fromEntries(finalPositions.map(p=>[p.competency_code,p]))
+  useEffect(()=>{
+    setComments(Object.fromEntries(finalPositions.map(p=>[p.competency_code,p.teacher_comment||''])))
+  },[finalPositions])
+  async function savePosition(ev, validated_level, teacher_comment=comments[ev.competency_code]??finalMap[ev.competency_code]?.teacher_comment??''){
+    setSaving(ev.competency_code)
+    const {data:{user}}=await supabase.auth.getUser()
+    await supabase.from('pp_final_positions').upsert({
+      student_id:student.id, competency_code:ev.competency_code, competency_label:ev.competency_label,
+      competency_group:ev.competency_group, proposed_level:ev.level, validated_level:validated_level||null,
+      teacher_comment:(teacher_comment||'').trim()||null,
+      updated_by:user.id, updated_at:new Date().toISOString()
+    },{onConflict:'student_id,competency_code'})
+    setSaving(''); onRefresh()
+  }
+  return <div className="summary-layout">
+    <div className="summary-cards"><div className="summary-card accent"><span>Note indicative</span><strong>{!noteEnabled||synthesis.note==null?'—':`${synthesis.note.toFixed(1)} / 20`}</strong><small>{noteEnabled?'À valider par l’enseignant':'Calcul désactivé pour la classe'}</small></div><div className="summary-card"><span>Compétences évaluées</span><strong>{synthesis.evaluated}</strong><small>Dernier positionnement retenu</small></div><div className="summary-card"><span>Niveau dominant</span><strong>{synthesis.dominant}</strong><small>{LEVELS.find(l=>l.code===synthesis.dominant)?.label||'Non évalué'}</small></div></div>
+    <div className="panel"><div className="panel-head"><div><h3>Synthèse par bloc</h3><p>Moyenne indicative issue des évaluations.</p></div></div><div className="group-bars">{Object.entries(GROUP_LABELS).map(([g,label])=>{const v=synthesis.groupAverages[g];return <div key={g} className="group-bar"><div><strong>{g}</strong><span>{label}</span></div><div className="bar-track"><div className="bar-fill" style={{width:`${v==null?0:v*5}%`}}/></div><b>{v==null?'—':v.toFixed(1)}</b></div>})}</div></div>
+    <div className="panel"><div className="panel-head"><div><h3>Positionnement final</h3><p>La proposition reprend la dernière évaluation connue. Vous gardez la validation finale et pouvez laisser un commentaire à l’élève.</p></div></div>{latest.length===0?<div className="small-empty">Aucune compétence évaluée.</div>:<div className="table-card flat"><table><thead><tr><th>Compétence</th><th>Proposition</th><th>Validation</th><th>Commentaire enseignant</th></tr></thead><tbody>{latest.map(ev=>{const fp=finalMap[ev.competency_code];return <tr key={ev.competency_code}><td><strong>{ev.competency_code}</strong><div className="cell-sub">{ev.competency_label}</div></td><td><LevelBadge level={ev.level}/></td><td>{readOnly?(fp?.validated_level?<LevelBadge level={fp.validated_level}/>:<span className="badge muted">Non validé</span>):<select className="compact-select" value={fp?.validated_level||''} onChange={e=>savePosition(ev,e.target.value)} disabled={saving===ev.competency_code}><option value="">À valider</option>{LEVELS.filter(l=>l.code!=='NE').map(l=><option key={l.code} value={l.code}>{l.code} — {l.label}</option>)}</select>}</td><td>{readOnly?<span>{fp?.teacher_comment||'—'}</span>:<div className="position-comment-cell"><input className="compact-input" value={comments[ev.competency_code]??''} placeholder="Commentaire visible si autorisé" onChange={e=>setComments({...comments,[ev.competency_code]:e.target.value})} onBlur={e=>savePosition(ev,fp?.validated_level||'',e.target.value)} disabled={saving===ev.competency_code}/></div>}</td></tr>})}</tbody></table></div>}</div>
+  </div>
+}
+
+function LevelBadge({level}) { return <span className={`level-badge level-${level}`}>{level}</span> }
+
+function EvaluationHistory({ evaluations, selfEvaluations, readOnly=false, onRefresh }) {
+  const [view,setView]=useState('teacher')
+  async function remove(id){if(!confirm('Supprimer cette évaluation ?'))return;await supabase.from('pp_teacher_evaluations').delete().eq('id',id);onRefresh()}
+  const rows=view==='teacher'?evaluations:selfEvaluations
+  return <div className="panel"><div className="panel-head"><div><h3>Historique des évaluations</h3><p>Traçabilité complète des observations.</p></div><div className="segmented compact"><button className={view==='teacher'?'active':''} onClick={()=>setView('teacher')}>Enseignant</button><button className={view==='self'?'active':''} onClick={()=>setView('self')}>Autoévaluations</button></div></div><div className="table-card flat"><table><thead><tr><th>Date</th><th>Compétence</th><th>Niveau</th><th>Source / commentaire</th><th></th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td>{new Date(r.assessed_at).toLocaleDateString('fr-FR')}</td><td><strong>{r.competency_code}</strong><div className="cell-sub">{r.competency_label}</div></td><td><LevelBadge level={r.level}/></td><td>{view==='teacher'?(r.observation||r.source_label||'—'):(r.comment||r.success_note||r.difficulty_note||'—')}</td><td>{view==='teacher'&&!readOnly&&<button className="icon-btn danger-text" onClick={()=>remove(r.id)}><Trash2/></button>}</td></tr>)}</tbody></table>{rows.length===0&&<div className="small-empty">Aucune donnée.</div>}</div></div>
+}
+
+function StudentPfmp({ student, periods, debriefs, readOnly=false, onRefresh }) {
+  const [open,setOpen]=useState(false)
+  return <div className="panel"><div className="panel-head"><div><h3>Suivi PFMP</h3><p>Débriefs et objectifs de progression.</p></div>{!readOnly&&<button className="btn primary" onClick={()=>setOpen(true)}><Plus/>Ajouter un débrief</button>}</div><div className="cards-list">{debriefs.map(d=><div className="mini-card" key={d.id}><div><strong>{d.company||'Entreprise non renseignée'}</strong><span>{new Date(d.debrief_date).toLocaleDateString('fr-FR')} {d.tutor_name?`• Tuteur : ${d.tutor_name}`:''}</span></div><p><b>Points forts :</b> {d.strengths||'—'}</p><p><b>Difficultés :</b> {d.difficulties||'—'}</p><p><b>Objectifs :</b> {d.next_objectives||'—'}</p></div>)}{debriefs.length===0&&<div className="small-empty">Aucun débrief PFMP.</div>}</div>{!readOnly&&open&&<PfmpDebriefModal student={student} periods={periods} onClose={()=>setOpen(false)} onSaved={()=>{setOpen(false);onRefresh()}}/>}</div>
+}
+
+function PfmpDebriefModal({student,periods,diplomaCode='',onClose,onSaved}) {
+  const [f,setF]=useState({pfmp_period_id:periods[0]?.id||'',company:'',tutor_name:'',debrief_date:new Date().toISOString().slice(0,10),strengths:'',difficulties:'',next_objectives:'',summary:''})
+  const [gc,setGc]=useState([])
+  const [positions,setPositions]=useState({})
+  const [error,setError]=useState('')
+  const [busy,setBusy]=useState(false)
+  useEffect(()=>{
+    let active=true
+    async function loadGc(){
+      let code=diplomaCode
+      if(!code && student.class_id){const {data}=await supabase.from('pp_classes').select('diploma_code').eq('id',student.class_id).maybeSingle();code=data?.diploma_code}
+      if(!code)return
+      const {data,error}=await supabase.from('pp_competencies').select('code,label,group_code,parent_code').eq('diploma_code',code).is('parent_code',null).order('sort_order')
+      if(active){if(error)setError(toastError(error));else setGc(data||[])}
+    }
+    loadGc()
+    return()=>{active=false}
+  },[diplomaCode,student.class_id])
+  async function submit(e){
+    e.preventDefault();if(busy)return;setBusy(true);setError('')
+    const {data:{user},error:authError}=await supabase.auth.getUser()
+    if(authError||!user){setError('Connexion requise');setBusy(false);return}
+    const {error}=await supabase.from('pp_pfmp_debriefs').insert({...f,gc_positions:positions,pfmp_period_id:f.pfmp_period_id||null,student_id:student.id,teacher_id:user.id})
+    setBusy(false)
+    if(error)setError(toastError(error));else onSaved()
+  }
+  return <Modal title="Débrief PFMP — {student.last_name} {student.first_name}" onClose={onClose}><form className="form-grid" onSubmit={submit}>
+    <label>Période<select value={f.pfmp_period_id} onChange={e=>setF({...f,pfmp_period_id:e.target.value})}><option value="">Sans période</option>{periods.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select></label>
+    <label>Date<input type="date" value={f.debrief_date} onChange={e=>setF({...f,debrief_date:e.target.value})}/></label>
+    <label>Entreprise<input value={f.company} onChange={e=>setF({...f,company:e.target.value})}/></label>
+    <label>Tuteur<input value={f.tutor_name} onChange={e=>setF({...f,tutor_name:e.target.value})}/></label>
+    <div className="full pfmp-gc-positioning"><h3>Positionnement des compétences GC</h3><p>Choisissez uniquement les compétences observées pendant cette PFMP. Les autres restent non évaluées.</p>
+      {gc.map(c=><div className="pfmp-gc-row" key={c.code}><div><b>{c.code}</b> · {c.label}</div><div className="pfmp-gc-levels">{[['','—'],['N','N'],['D','D'],['A','A'],['E','E'],['NE','NE']].map(([value,label])=><button key={label} type="button" aria-pressed={(positions[c.code]||'')===value} className={value?'pfmp-level pfmp-level-'+value:'pfmp-level'} onClick={()=>setPositions(prev=>{const next={...prev};if(value)next[c.code]=value;else delete next[c.code];return next})}>{label}</button>)}</div></div>)}
+      {!gc.length&&<small>Aucune compétence GC chargée pour ce diplôme.</small>}
+    </div>
+    <label className="full">Points forts<textarea rows="3" value={f.strengths} onChange={e=>setF({...f,strengths:e.target.value})}/></label>
+    <label className="full">Difficultés / points à consolider<textarea rows="3" value={f.difficulties} onChange={e=>setF({...f,difficulties:e.target.value})}/></label>
+    <label className="full">Conseils / objectifs pour la prochaine PFMP<textarea rows="3" value={f.next_objectives} onChange={e=>setF({...f,next_objectives:e.target.value})}/></label>
+    {error&&<div className="form-message full" role="alert">{error}</div>}
+    <div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary" disabled={busy}><Save/>{busy?'Enregistrement…':'Enregistrer le débrief PFMP'}</button></div>
+  </form></Modal>
+}
+
+function StudentCcf({ student, exams, results, documents, requirements=[], readOnly=false, onRefresh }) {
+  const resultMap=Object.fromEntries(results.map(r=>[r.exam_code,r]))
+  const proposedScore=r=>r?.proposed_score??r?.score??null
+  const validatedScore=r=>r?.validated_score??(r?.status==='valide'?r?.score:null)
+  const [editExam,setEditExam]=useState(null)
+  const visible=exams.filter(e=>['ccf','mixte'].includes(e.assessment_mode))
+  const activeReqs=requirements.filter(r=>r.active!==false&&visible.some(e=>e.code===r.exam_code))
+  const required=activeReqs.filter(r=>r.required)
+  const completedRequired=required.filter(r=>(documents||[]).some(d=>d.document_scope==='ccf'&&d.requirement_id===r.id)).length
+  const validatedRequired=required.filter(r=>(documents||[]).some(d=>d.document_scope==='ccf'&&d.requirement_id===r.id&&d.status==='valide')).length
+  const validatedNotes=visible.filter(e=>validatedScore(resultMap[e.code])!=null).length
+  return <div className="stack">
+    <div className="summary-cards ccf-dossier-summary">
+      <div className="summary-card accent"><span>Pièces obligatoires reçues</span><strong>{required.length?`${completedRequired} / ${required.length}`:'—'}</strong><small>{required.length?'Dossier documentaire':'Aucune pièce obligatoire configurée'}</small></div>
+      <div className="summary-card"><span>Pièces obligatoires validées</span><strong>{required.length?`${validatedRequired} / ${required.length}`:'—'}</strong><small>Validation par l’enseignant</small></div>
+      <div className="summary-card"><span>Notes CCF validées</span><strong>{visible.length?`${validatedNotes} / ${visible.length}`:'—'}</strong><small>Une proposition n’est pas encore une note validée</small></div>
+      <div className="summary-card"><span>Épreuves CCF</span><strong>{visible.length}</strong><small>{(documents||[]).filter(d=>d.document_scope==='ccf').length} document(s) déposé(s)</small></div>
+    </div>
+    <div className="panel"><div className="panel-head"><div><h3>Suivi CCF</h3><p>{readOnly?'Consultation des propositions, validations et documents CCF.':'Saisissez d’abord une note proposée, puis validez-la explicitement lorsque le CCF est arrêté.'}</p></div></div><div className="exam-grid">{visible.map(e=>{const r=resultMap[e.code];const proposed=proposedScore(r);const validated=validatedScore(r);const reqs=activeReqs.filter(x=>x.exam_code===e.code&&x.required);const present=reqs.filter(x=>(documents||[]).some(d=>d.requirement_id===x.id)).length;return <button className="exam-card" key={e.id} onClick={()=>!readOnly&&setEditExam(e)}><div><span className="exam-code">{e.code}</span><strong>{e.label}</strong></div><div className="exam-score">{validated!=null?<><b>{Number(validated).toFixed(1)}</b><span>/20</span></>:proposed!=null?<><b>{Number(proposed).toFixed(1)}</b><span>/20 proposé</span></>:<span>Non noté</span>}</div><div className="ccf-note-state"><span className={`badge ${validated!=null?'success':proposed!=null?'warning':'muted'}`}>{validated!=null?'Note validée':proposed!=null?'À valider':'Non évalué'}</span>{validated!=null&&proposed!=null&&Number(proposed)!==Number(validated)&&<small>Proposition : {Number(proposed).toFixed(1)}/20</small>}</div><small>Coeff. {e.coefficient||'—'} • {e.mode_hint||''}</small>{reqs.length>0&&<div className="ccf-exam-doc-progress"><span>{present}/{reqs.length} pièce(s) obligatoire(s)</span><div className="mini-progress-track"><div className="mini-progress-fill" style={{width:`${Math.round((present/reqs.length)*100)}%`}}/></div></div>}</button>})}</div>{!visible.length&&<div className="small-empty">Aucune épreuve CCF configurée pour ce diplôme.</div>}{!readOnly&&editExam&&<CcfResultModal student={student} exam={editExam} result={resultMap[editExam.code]} onClose={()=>setEditExam(null)} onSaved={()=>{setEditExam(null);onRefresh()}}/>}</div>
+    <CcfDocumentSection student={student} exams={visible} documents={documents} requirements={activeReqs} readOnly={readOnly} onRefresh={onRefresh}/>
+  </div>
+}
+
+function CcfDocumentSection({ student, exams, documents, requirements=[], readOnly=false, studentMode=false, onRefresh }) {
+  const normalizedExams=exams.map(e=>({code:e.code||e.exam_code,label:e.label||e.exam_label}))
+  const ccfDocs=(documents||[]).filter(d=>d.document_scope==='ccf')
+  const [examCode,setExamCode]=useState(normalizedExams[0]?.code||'')
+  const examRequirements=requirements.filter(r=>r.active!==false&&r.exam_code===examCode).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0))
+  const [requirementId,setRequirementId]=useState('')
+  const [uploading,setUploading]=useState(false)
+  const [error,setError]=useState('')
+  const [reviewing,setReviewing]=useState(null)
+  const statusLabel={depose:'Déposé',a_verifier:'À vérifier',valide:'Validé',a_corriger:'À corriger'}
+
+  useEffect(()=>{
+    if(!normalizedExams.some(e=>e.code===examCode))setExamCode(normalizedExams[0]?.code||'')
+  },[normalizedExams.map(e=>e.code).join('|')])
+
+  useEffect(()=>{
+    if(requirementId&&!examRequirements.some(r=>r.id===requirementId))setRequirementId('')
+  },[examCode,requirements.map(r=>r.id).join('|')])
+
+  function examLabel(code){return normalizedExams.find(e=>e.code===code)?.label||code||'CCF'}
+  function requirementLabel(id){return requirements.find(r=>r.id===id)?.title||null}
+  function requirementState(req){
+    const docs=ccfDocs.filter(d=>d.requirement_id===req.id)
+    if(!docs.length)return {label:'Manquant',className:'warning'}
+    if(docs.some(d=>d.status==='valide'))return {label:'Validé',className:'success'}
+    if(docs.some(d=>d.status==='a_corriger'))return {label:'À corriger',className:'danger'}
+    return {label:'Reçu',className:'info'}
+  }
+
+  async function download(doc){
+    setError('')
+    const {data,error}=await supabase.storage.from('pp-documents').createSignedUrl(doc.storage_path,60)
+    if(error)setError(toastError(error));else window.open(data.signedUrl,'_blank','noopener,noreferrer')
+  }
+
+  async function upload(file,forcedRequirementId=null,forcedExamCode=null){
+    const targetExam=forcedExamCode||examCode
+    const targetRequirement=forcedRequirementId??requirementId
+    setError('')
+    if(!targetExam){setError('Choisissez une épreuve CCF.');return}
+    if(file.size>20*1024*1024){setError('Le fichier dépasse 20 Mo.');return}
+    setUploading(true)
+    try{
+      const {data:{user}}=await supabase.auth.getUser()
+      const safe=safeFileName(file.name)
+      const reqPart=targetRequirement?`/${targetRequirement}`:'/complementaire'
+      const path=`${user.id}/${student.id}/ccf/${targetExam}${reqPart}/${Date.now()}-${safe}`
+      const {error:uErr}=await supabase.storage.from('pp-documents').upload(path,file,{upsert:false})
+      if(uErr)throw uErr
+      const {error:dErr}=await supabase.from('pp_documents').insert({
+        student_id:student.id,
+        document_scope:'ccf',
+        exam_code:targetExam,
+        requirement_id:targetRequirement||null,
+        title:file.name,
+        file_name:file.name,
+        storage_path:path,
+        mime_type:file.type||null,
+        file_size:file.size,
+        status:'depose',
+        uploaded_by:user.id
+      })
+      if(dErr){await supabase.storage.from('pp-documents').remove([path]);throw dErr}
+      await onRefresh()
+    }catch(e){setError(toastError(e))}finally{setUploading(false)}
+  }
+
+  async function remove(doc){
+    if(studentMode&&!doc.can_delete)return
+    if(!confirm(`Supprimer définitivement ${doc.file_name||doc.title} ?`))return
+    setError('')
+    if(studentMode){
+      const {data:deleted,error:dErr}=await supabase.rpc('pp_delete_my_document',{target_document_id:doc.id})
+      if(dErr||deleted!==true){setError(dErr?toastError(dErr):'Suppression refusée.');return}
+      const {error:sErr}=await supabase.storage.from('pp-documents').remove([doc.storage_path])
+      if(sErr)setError('Le document a bien été retiré de votre dossier, mais le nettoyage du fichier devra être retenté.')
+    }else{
+      const {error:sErr}=await supabase.storage.from('pp-documents').remove([doc.storage_path])
+      if(sErr){setError(toastError(sErr));return}
+      const {error:dErr}=await supabase.from('pp_documents').delete().eq('id',doc.id)
+      if(dErr){setError(toastError(dErr));return}
+    }
+    await onRefresh()
+  }
+
+  const requiredReqs=requirements.filter(r=>r.active!==false&&r.required).sort((a,b)=>`${a.exam_code}|${String(a.sort_order||0).padStart(5,'0')}`.localeCompare(`${b.exam_code}|${String(b.sort_order||0).padStart(5,'0')}`))
+
+  return <div className="panel ccf-doc-panel">
+    <div className="panel-head"><div><h3>{studentMode?'Mon dossier CCF':'Dossier documentaire CCF'}</h3><p>{studentMode?'Déposez les pièces attendues directement dans la bonne épreuve. Vous pouvez supprimer vos propres documents CCF.':'Consultez les pièces attendues, repérez les manquants, vérifiez ou supprimez les documents de cet élève.'}</p></div></div>
+
+    {requiredReqs.length>0&&<div className="ccf-requirement-checklist">{requiredReqs.map(req=>{const st=requirementState(req);const docs=ccfDocs.filter(d=>d.requirement_id===req.id);return <div className="ccf-requirement-row" key={req.id}><div><span className="exam-code">{req.exam_code}</span><strong>{req.title}</strong>{req.instructions&&<small>{req.instructions}</small>}</div><div className="row wrap"><span className={`badge ${st.className}`}>{st.label}</span>{studentMode&&!readOnly&&<label className="btn small file-btn"><Upload/>{docs.length?'Ajouter':'Déposer'}<input type="file" hidden disabled={uploading} onChange={e=>e.target.files?.[0]&&upload(e.target.files[0],req.id,req.exam_code)}/></label>}</div></div>})}</div>}
+
+    {!readOnly&&normalizedExams.length>0&&<div className="upload-zone ccf-upload-zone"><select value={examCode} onChange={e=>{setExamCode(e.target.value);setRequirementId('')}}>{normalizedExams.map(e=><option key={e.code} value={e.code}>{e.code} — {e.label}</option>)}</select><select value={requirementId} onChange={e=>setRequirementId(e.target.value)}><option value="">Document complémentaire</option>{examRequirements.map(r=><option key={r.id} value={r.id}>{r.required?'Obligatoire':'Facultatif'} — {r.title}</option>)}</select><label className="btn primary file-btn"><Upload/>{uploading?'Envoi…':studentMode?'Déposer dans le CCF':'Ajouter un document CCF'}<input type="file" hidden disabled={uploading} onChange={e=>e.target.files?.[0]&&upload(e.target.files[0])}/></label><small>20 Mo maximum.</small></div>}
+    {error&&<div className="form-message">{error}</div>}
+    <div className="cards-list">{ccfDocs.map(d=><div className="document-row ccf-document-row" key={d.id}><div className="doc-icon"><FileText/></div><div><strong>{d.title||d.file_name}</strong><span>{d.exam_code?`${d.exam_code} — ${examLabel(d.exam_code)} • `:''}{requirementLabel(d.requirement_id)?`${requirementLabel(d.requirement_id)} • `:''}{statusLabel[d.status]||d.status} • {new Date(d.uploaded_at).toLocaleDateString('fr-FR')}</span>{d.teacher_comment&&<small className="student-document-comment"><b>Commentaire :</b> {d.teacher_comment}</small>}</div><div className="row"><button className="icon-btn" onClick={()=>download(d)} title="Télécharger"><Download/></button>{!studentMode&&!readOnly&&<button className="icon-btn" onClick={()=>setReviewing(d)} title="Vérifier / commenter"><Pencil/></button>}{!readOnly&&(!studentMode||d.can_delete)&&<button className="icon-btn danger-text" onClick={()=>remove(d)} title="Supprimer le document"><Trash2/></button>}</div></div>)}{!ccfDocs.length&&<div className="small-empty">Aucun document CCF déposé.</div>}</div>
+    {!studentMode&&!readOnly&&reviewing&&<DocumentReviewModal document={reviewing} onClose={()=>setReviewing(null)} onSaved={()=>{setReviewing(null);onRefresh()}}/>}
+  </div>
+}
+
+function CcfResultModal({student,exam,result,onClose,onSaved}) {
+  const initialProposed=result?.proposed_score??result?.score??''
+  const initialValidated=result?.validated_score??(result?.status==='valide'?result?.score:null)
+  const [score,setScore]=useState(initialProposed)
+  const [comment,setComment]=useState(result?.comment||'')
+  const [error,setError]=useState('')
+  const [saving,setSaving]=useState(false)
+  async function save(mode){
+    setError('')
+    if(score!==''&&(Number(score)<0||Number(score)>20)){setError('La note doit être comprise entre 0 et 20.');return}
+    if(mode==='validate'&&score===''){setError('Saisissez une note proposée avant de la valider.');return}
+    setSaving(true)
+    try{
+      const {data:{user}}=await supabase.auth.getUser()
+      const now=new Date().toISOString()
+      const value=score===''?null:Number(score)
+      const validating=mode==='validate'
+      const payload={
+        student_id:student.id,
+        exam_code:exam.code,
+        exam_label:exam.label,
+        score:value,
+        proposed_score:value,
+        validated_score:validating?value:null,
+        validated_at:validating?now:null,
+        validated_by:validating?user.id:null,
+        coefficient:exam.coefficient,
+        status:validating?'valide':value==null?'non_evalue':'en_cours',
+        comment,
+        assessed_by:user.id,
+        assessed_at:result?.assessed_at||now,
+        updated_at:now
+      }
+      const {error}=await supabase.from('pp_exam_results').upsert(payload,{onConflict:'student_id,exam_code'})
+      if(error)setError(toastError(error));else onSaved()
+    }finally{setSaving(false)}
+  }
+  return <Modal title={`${exam.code} — ${exam.label}`} onClose={onClose}><form className="form-grid" onSubmit={e=>{e.preventDefault();save('proposal')}}><label>Note proposée /20<input type="number" min="0" max="20" step="0.25" value={score} onChange={e=>setScore(e.target.value)}/></label><div className="ccf-validation-box"><span>État actuel</span>{initialValidated!=null?<><strong>{Number(initialValidated).toFixed(1)}/20 validé</strong><small>Une nouvelle proposition annulera cette validation jusqu’à une nouvelle validation explicite.</small></>:<><strong>{initialProposed!==''?`${Number(initialProposed).toFixed(1)}/20 proposé`:'Non évalué'}</strong><small>{initialProposed!==''?'Cette note reste à valider.':'Aucune note proposée.'}</small></>}</div><label className="full">Commentaire<textarea rows="4" value={comment} onChange={e=>setComment(e.target.value)}/></label>{error&&<div className="form-message full">{error}</div>}<div className="modal-actions full"><button type="button" className="btn ghost" onClick={onClose}>Annuler</button><button type="submit" className="btn ghost" disabled={saving}><Save/>Enregistrer la proposition</button><button type="button" className="btn primary" disabled={saving||score===''} onClick={()=>save('validate')}><CheckCircle2/>Valider la note</button></div></form></Modal>
+}
+
+
+function StudentDocuments({ student, documents, readOnly=false, onRefresh }) {
+  const [uploading,setUploading]=useState(false)
+  const [scope,setScope]=useState('other')
+  const [error,setError]=useState('')
+  const [reviewing,setReviewing]=useState(null)
+  const statusLabel={depose:'Déposé',a_verifier:'À vérifier',valide:'Validé',a_corriger:'À corriger'}
+  const visibleDocuments=documents.filter(d=>d.document_scope!=='ccf')
+
+  async function upload(file){
+    setUploading(true);setError('')
+    const {data:{user}}=await supabase.auth.getUser()
+    const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_')
+    const path=`${user.id}/${student.id}/${Date.now()}-${safe}`
+    const {error:uErr}=await supabase.storage.from('pp-documents').upload(path,file,{upsert:false})
+    if(uErr){setError(toastError(uErr));setUploading(false);return}
+    const {error:dErr}=await supabase.from('pp_documents').insert({student_id:student.id,document_scope:scope,title:file.name,file_name:file.name,storage_path:path,mime_type:file.type||null,file_size:file.size,status:'depose',uploaded_by:user.id})
+    if(dErr){await supabase.storage.from('pp-documents').remove([path]);setError(toastError(dErr))} else onRefresh()
+    setUploading(false)
+  }
+
+  async function download(doc){
+    const {data,error}=await supabase.storage.from('pp-documents').createSignedUrl(doc.storage_path,60)
+    if(error){setError(toastError(error));return}
+    window.open(data.signedUrl,'_blank','noopener,noreferrer')
+  }
+
+  async function remove(doc){
+    if(!confirm(`Supprimer ${doc.file_name} ?`))return
+    const {error:sErr}=await supabase.storage.from('pp-documents').remove([doc.storage_path])
+    if(sErr){setError(toastError(sErr));return}
+    const {error:dErr}=await supabase.from('pp_documents').delete().eq('id',doc.id)
+    if(dErr)setError(toastError(dErr));else onRefresh()
+  }
+
+  return <div className="panel">
+    <div className="panel-head"><div><h3>Documents</h3><p>PDF, images, Word, Excel et PowerPoint — 20 Mo maximum. Les dépôts élèves peuvent être vérifiés puis validés ou retournés à corriger.</p></div></div>
+    {!readOnly&&<div className="upload-zone"><select value={scope} onChange={e=>setScope(e.target.value)}><option value="report">Rapport</option><option value="pfmp">PFMP</option><option value="other">Autre</option></select><label className="btn primary file-btn"><Upload/>{uploading?'Envoi…':'Ajouter un document'}<input type="file" hidden disabled={uploading} onChange={e=>e.target.files?.[0]&&upload(e.target.files[0])}/></label></div>}
+    {error&&<div className="form-message">{error}</div>}
+    <div className="cards-list">{visibleDocuments.map(d=><div className="document-row" key={d.id}><div className="doc-icon"><FileText/></div><div><strong>{d.title||d.file_name}</strong><span>{d.document_scope.toUpperCase()} • {statusLabel[d.status]||d.status} • {new Date(d.uploaded_at).toLocaleDateString('fr-FR')}</span>{d.teacher_comment&&<small className="student-document-comment">{d.teacher_comment}</small>}</div><div className="row"><button className="icon-btn" onClick={()=>download(d)} title="Télécharger"><Download/></button>{!readOnly&&<button className="icon-btn" onClick={()=>setReviewing(d)} title="Vérifier / commenter"><Pencil/></button>}{!readOnly&&<button className="icon-btn danger-text" onClick={()=>remove(d)} title="Supprimer"><Trash2/></button>}</div></div>)}{visibleDocuments.length===0&&<div className="small-empty">Aucun document hors CCF.</div>}</div>
+    {!readOnly&&reviewing&&<DocumentReviewModal document={reviewing} onClose={()=>setReviewing(null)} onSaved={()=>{setReviewing(null);onRefresh()}}/>}
+  </div>
+}
+
+function DocumentReviewModal({document,onClose,onSaved}) {
+  const [status,setStatus]=useState(document.status||'a_verifier')
+  const [comment,setComment]=useState(document.teacher_comment||'')
+  const [error,setError]=useState('')
+  async function submit(e){
+    e.preventDefault()
+    const {data:{user}}=await supabase.auth.getUser()
+    const {error}=await supabase.from('pp_documents').update({
+      status,
+      teacher_comment:comment.trim()||null,
+      reviewed_by:user.id,
+      reviewed_at:new Date().toISOString()
+    }).eq('id',document.id)
+    if(error)setError(toastError(error));else onSaved()
+  }
+  return <Modal title="Vérifier le document" onClose={onClose}><form className="form-grid" onSubmit={submit}><label>Statut<select value={status} onChange={e=>setStatus(e.target.value)}><option value="depose">Déposé</option><option value="a_verifier">À vérifier</option><option value="valide">Validé</option><option value="a_corriger">À corriger</option></select></label><label className="full">Commentaire à l’élève<textarea rows="4" value={comment} onChange={e=>setComment(e.target.value)} placeholder="Ex. Document validé / compléter la partie…"/></label>{error&&<div className="form-message">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary"><Save/>Enregistrer</button></div></form></Modal>
+}
+
+function EditStudentModal({student,readOnly=false,onClose,onSaved}) {
+  const [f,setF]=useState({...student,email:student.email||'',group_name:student.group_name||''})
+  const [error,setError]=useState('')
+  async function submit(e){
+    e.preventDefault()
+    if(readOnly)return
+    setError('')
+    const {error}=await supabase.from('pp_students').update({last_name:f.last_name,first_name:f.first_name,group_name:f.group_name||null,email:f.email||null,access_enabled:f.access_enabled,visibility:f.visibility}).eq('id',student.id)
+    if(error){setError(toastError(error));return}
+    onSaved()
+  }
+  function toggleVisibility(key){
+    if(readOnly)return
+    const next={...f.visibility,[key]:!f.visibility?.[key]}
+    if(key==='teacher_comments'&&next.teacher_comments) next.teacher_positions=true
+    if(key==='teacher_positions'&&!next.teacher_positions) next.teacher_comments=false
+    setF({...f,visibility:next})
+  }
+  return <Modal title={readOnly?"Accès élève — consultation":"Modifier l’élève"} onClose={onClose}><form className="form-grid" onSubmit={submit}>
+    {readOnly&&<div className="form-message info full">Lecture seule : aucune modification ne sera enregistrée.</div>}
+    <label>Nom<input disabled={readOnly} value={f.last_name} onChange={e=>setF({...f,last_name:e.target.value.toUpperCase()})}/></label>
+    <label>Prénom<input disabled={readOnly} value={f.first_name} onChange={e=>setF({...f,first_name:e.target.value})}/></label>
+    <label>Groupe<input disabled={readOnly} value={f.group_name} onChange={e=>setF({...f,group_name:e.target.value})}/></label>
+    <label>E-mail<input disabled={readOnly} type="email" value={f.email} onChange={e=>setF({...f,email:e.target.value})}/></label>
+    <label className="check full"><input disabled={readOnly} type="checkbox" checked={f.access_enabled} onChange={e=>setF({...f,access_enabled:e.target.checked})}/>Activer l’espace élève</label>
+    <div className="full"><strong className="field-title">Ce que l’élève peut voir</strong><div className="visibility-grid">{[['self_assessment','Autoévaluation'],['progression','Progression'],['ccf','CCF'],['reports','Rapports'],['pfmp','PFMP'],['teacher_positions','Positionnements professeur'],['teacher_comments','Commentaires professeur'],['synthesis','Synthèse']].map(([k,l])=><button disabled={readOnly} type="button" key={k} className={f.visibility?.[k]?'visibility on':'visibility'} onClick={()=>toggleVisibility(k)}>{f.visibility?.[k]?<Eye/>:<EyeOff/>}{l}</button>)}</div></div>
+    {error&&<div className="form-message full">{error}</div>}
+    <div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>{readOnly?'Fermer':'Annuler'}</button>{!readOnly&&<button className="btn primary">Enregistrer</button>}</div>
+  </form></Modal>
+}
+
+function ClassSynthesisTab({klass}) {
+  const [students,setStudents]=useState([])
+  const [evaluations,setEvaluations]=useState([])
+  const [settings,setSettings]=useState({note_enabled:true,note_mapping:{N:5,D:10,A:15,E:20},synthesis_mode:'latest_per_competency'})
+  const [q,setQ]=useState('')
+  const [group,setGroup]=useState('')
+  async function load(){
+    const [s,st]=await Promise.all([
+      supabase.from('pp_students').select('id,last_name,first_name,group_name').eq('class_id',klass.id).order('last_name'),
+      supabase.from('pp_class_settings').select('*').eq('class_id',klass.id).maybeSingle()
+    ])
+    setStudents(s.data||[]);if(st.data)setSettings(st.data)
+    const ids=(s.data||[]).map(x=>x.id)
+    if(ids.length){const ev=await supabase.from('pp_teacher_evaluations').select('*').in('student_id',ids);setEvaluations(ev.data||[])}else setEvaluations([])
+  }
+  useEffect(()=>{load()},[klass.id])
+  const rows=useMemo(()=>students.map(student=>{const evs=evaluations.filter(e=>e.student_id===student.id);return {...student,synthesis:computeSynthesis(evs,settings.note_mapping,settings.synthesis_mode)}}),[students,evaluations,settings])
+  const groups=useMemo(()=>[...new Set(students.map(s=>s.group_name).filter(Boolean))].sort(),[students])
+  const filtered=rows.filter(r=>`${r.last_name} ${r.first_name}`.toLowerCase().includes(q.toLowerCase())&&(!group||r.group_name===group))
+  const classNotes=filtered.map(r=>r.synthesis.note).filter(v=>v!=null)
+  const classAvg=classNotes.length?classNotes.reduce((a,b)=>a+b,0)/classNotes.length:null
+  const evaluatedStudents=filtered.filter(r=>r.synthesis.evaluated>0).length
+  const coverage=filtered.length?Math.round((evaluatedStudents/filtered.length)*100):0
+  function exportCsv(){
+    const g4=klass.diploma_code==='MCVA'?'G4A':'G4B'

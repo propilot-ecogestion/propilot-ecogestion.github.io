@@ -1,0 +1,528 @@
+    const esc=v=>`"${String(v??'').replaceAll('"','""')}"`
+    const body=[['Nom','Prénom','Groupe','Compétences évaluées','Note indicative','G1','G2','G3',g4,'Niveau dominant'],...filtered.map(r=>[r.last_name,r.first_name,r.group_name,r.synthesis.evaluated,settings.note_enabled&&r.synthesis.note!=null?r.synthesis.note.toFixed(1):'',r.synthesis.groupAverages.G1?.toFixed(1)??'',r.synthesis.groupAverages.G2?.toFixed(1)??'',r.synthesis.groupAverages.G3?.toFixed(1)??'',r.synthesis.groupAverages[g4]?.toFixed(1)??'',r.synthesis.dominant])]
+    downloadTextFile('\uFEFF'+body.map(r=>r.map(esc).join(';')).join('\n'),`Synthese_${klass.name.replace(/\s+/g,'_')}.csv`,'text/csv;charset=utf-8')
+  }
+  return <div>
+    <div className="summary-cards class-summary-cards">
+      <div className="summary-card accent"><span>Moyenne indicative classe</span><strong>{!settings.note_enabled||classAvg==null?'—':`${classAvg.toFixed(1)} / 20`}</strong><small>{classNotes.length} élève(s) avec données</small></div>
+      <div className="summary-card"><span>Élèves positionnés</span><strong>{evaluatedStudents} / {filtered.length}</strong><small>Au moins une compétence évaluée</small></div>
+      <div className="summary-card"><span>Couverture</span><strong>{coverage}%</strong><small>Sur la sélection actuelle</small></div>
+      <div className="summary-card"><span>Évaluations enregistrées</span><strong>{evaluations.length}</strong><small>Toutes compétences confondues</small></div>
+    </div>
+    <div className="toolbar wrap"><div><h3>Vue globale de la classe</h3><p>Derniers positionnements agrégés par élève et par bloc.</p></div><div className="row wrap"><select value={group} onChange={e=>setGroup(e.target.value)}><option value="">Tous les groupes</option>{groups.map(g=><option key={g}>{g}</option>)}</select><div className="search"><Search size={18}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Rechercher un élève"/></div><button className="btn" onClick={exportCsv}><Download/>Exporter CSV</button></div></div>
+    <div className="table-card synthesis-table"><table><thead><tr><th>Élève</th><th>Évaluées</th><th>Note ind.</th><th>G1</th><th>G2</th><th>G3</th><th>{klass.diploma_code==='MCVA'?'G4A':'G4B'}</th><th>Niveau dominant</th></tr></thead><tbody>{filtered.map(r=>{const s=r.synthesis;const g4=klass.diploma_code==='MCVA'?'G4A':'G4B';return <tr key={r.id}><td><strong>{r.last_name} {r.first_name}</strong><div className="cell-sub">{r.group_name||''}</div></td><td>{s.evaluated}</td><td>{!settings.note_enabled||s.note==null?'—':`${s.note.toFixed(1)}/20`}</td><td>{s.groupAverages.G1==null?'—':s.groupAverages.G1.toFixed(1)}</td><td>{s.groupAverages.G2==null?'—':s.groupAverages.G2.toFixed(1)}</td><td>{s.groupAverages.G3==null?'—':s.groupAverages.G3.toFixed(1)}</td><td>{s.groupAverages[g4]==null?'—':s.groupAverages[g4].toFixed(1)}</td><td><LevelBadge level={s.dominant}/></td></tr>})}</tbody></table>{!filtered.length&&<div className="small-empty">Aucune donnée.</div>}</div>
+  </div>
+}
+
+function FinalPositioningTab({klass,readOnly=false}) {
+  const [students,setStudents]=useState([])
+  const [competencies,setCompetencies]=useState([])
+  const [evaluations,setEvaluations]=useState([])
+  const [positions,setPositions]=useState([])
+  const [competency,setCompetency]=useState('')
+  const [levels,setLevels]=useState({})
+  const [group,setGroup]=useState('')
+  const [message,setMessage]=useState('')
+  const [busy,setBusy]=useState(false)
+  async function load(){
+    const [s,c]=await Promise.all([
+      supabase.from('pp_students').select('id,last_name,first_name,group_name').eq('class_id',klass.id).order('last_name'),
+      supabase.from('pp_competencies').select('code,label,group_code,parent_code').eq('diploma_code',klass.diploma_code).not('parent_code','is',null).order('sort_order')
+    ])
+    setStudents(s.data||[]);setCompetencies(c.data||[])
+    const ids=(s.data||[]).map(x=>x.id)
+    if(ids.length){
+      const [ev,po]=await Promise.all([
+        supabase.from('pp_teacher_evaluations').select('*').in('student_id',ids).order('assessed_at',{ascending:false}),
+        supabase.from('pp_final_positions').select('*').in('student_id',ids)
+      ])
+      setEvaluations(ev.data||[]);setPositions(po.data||[])
+    }else{setEvaluations([]);setPositions([])}
+  }
+  useEffect(()=>{load()},[klass.id,klass.diploma_code])
+  const selected=competencies.find(c=>c.code===competency)
+  const groups=useMemo(()=>[...new Set(students.map(s=>s.group_name).filter(Boolean))].sort(),[students])
+  const visibleStudents=group?students.filter(s=>s.group_name===group):students
+  function latestFor(studentId){return evaluations.find(e=>e.student_id===studentId&&e.competency_code===competency&&e.level!=='NE')}
+  function currentFor(studentId){return positions.find(p=>p.student_id===studentId&&p.competency_code===competency)}
+  function prepareDefaults(code){
+    setCompetency(code)
+    if(!code){setLevels({});return}
+    const next={}
+    for(const st of students){
+      const p=positions.find(x=>x.student_id===st.id&&x.competency_code===code)
+      const e=evaluations.find(x=>x.student_id===st.id&&x.competency_code===code&&x.level!=='NE')
+      if(p?.validated_level)next[st.id]=p.validated_level
+      else if(e?.level)next[st.id]=e.level
+    }
+    setLevels(next)
+  }
+  function applyProposals(){
+    if(!competency)return
+    const next={...levels}
+    for(const st of visibleStudents){const e=latestFor(st.id);if(e?.level)next[st.id]=e.level}
+    setLevels(next)
+  }
+  async function saveAll(){
+    if(readOnly||!selected)return
+    const selectedRows=visibleStudents.filter(st=>levels[st.id])
+    if(!selectedRows.length){setMessage('Aucun niveau à valider pour la sélection.');return}
+    setBusy(true);setMessage('')
+    const {data:{user}}=await supabase.auth.getUser()
+    const rows=selectedRows.map(st=>{const latest=latestFor(st.id);return {student_id:st.id,competency_code:selected.code,competency_label:selected.label,competency_group:selected.group_code,proposed_level:latest?.level||null,validated_level:levels[st.id],updated_by:user.id,updated_at:new Date().toISOString()}})
+    const {error}=await supabase.from('pp_final_positions').upsert(rows,{onConflict:'student_id,competency_code'})
+    setBusy(false)
+    if(error)setMessage(toastError(error));else{setMessage(`${rows.length} positionnement(s) final(aux) enregistré(s).`);await load()}
+  }
+  const validatedCount=competency?visibleStudents.filter(st=>currentFor(st.id)?.validated_level).length:0
+  return <div>
+    <div className="summary-cards class-summary-cards"><div className="summary-card accent"><span>Compétence sélectionnée</span><strong>{selected?.code||'—'}</strong><small>{selected?.label||'Choisissez une compétence'}</small></div><div className="summary-card"><span>Validés</span><strong>{validatedCount} / {visibleStudents.length}</strong><small>Sur la sélection actuelle</small></div><div className="summary-card"><span>Mode</span><strong>{readOnly?'Lecture':'Validation'}</strong><small>{readOnly?'Aucune modification possible':'Le professeur garde la décision finale'}</small></div></div>
+    <div className="panel"><div className="panel-head"><div><h3>Positionnement final par compétence</h3><p>La dernière évaluation sert de proposition. Vous pouvez la confirmer ou la modifier élève par élève.</p></div>{!readOnly&&<div className="row"><button className="btn" type="button" onClick={applyProposals} disabled={!competency}><RotateCcw/>Reprendre les propositions</button><button className="btn primary" type="button" onClick={saveAll} disabled={!competency||busy}><Save/>{busy?'Enregistrement…':'Valider la sélection'}</button></div>}</div>
+      <div className="bulk-selectors"><label>Compétence<select value={competency} onChange={e=>prepareDefaults(e.target.value)}><option value="">Choisir…</option>{competencies.map(c=><option key={c.code} value={c.code}>{c.code} — {c.label}</option>)}</select></label><label>Groupe<select value={group} onChange={e=>setGroup(e.target.value)}><option value="">Toute la classe</option>{groups.map(g=><option key={g}>{g}</option>)}</select></label></div>
+      {message&&<div className="form-message success">{message}</div>}
+      {!competency?<div className="small-empty">Sélectionnez une compétence pour afficher les élèves.</div>:<div className="bulk-eval-list">{visibleStudents.map(st=>{const latest=latestFor(st.id),current=currentFor(st.id);return <div className="bulk-student positioning-row" key={st.id}><div className="bulk-student-name"><strong>{st.last_name} {st.first_name}</strong><span>{st.group_name||''} • Proposition : {latest?.level||'aucune'} {current?.validated_level?`• Validé : ${current.validated_level}`:''}</span></div><div className="bulk-buttons">{LEVELS.filter(l=>l.code!=='NE').map(l=><button type="button" disabled={readOnly} key={l.code} className={levels[st.id]===l.code?`bulk-level active level-${l.code}`:'bulk-level'} onClick={()=>setLevels({...levels,[st.id]:l.code})}>{l.code}</button>)}</div></div>})}</div>}
+    </div>
+  </div>
+}
+
+function ProgressionTab({ klass, readOnly=false }) {
+  const [items,setItems]=useState([])
+  const [open,setOpen]=useState(false)
+  const [editItem,setEditItem]=useState(null)
+  async function load(){const {data}=await supabase.from('pp_progression_items').select('*').eq('class_id',klass.id).order('created_at');setItems(data||[])}
+  useEffect(()=>{load()},[klass.id])
+  async function remove(id){if(!confirm('Supprimer ce contexte ?'))return;await supabase.from('pp_progression_items').delete().eq('id',id);load()}
+  async function duplicate(item){
+    const {data:{user}}=await supabase.auth.getUser()
+    const {id,created_at,updated_at,...copy}=item
+    await supabase.from('pp_progression_items').insert({...copy,context_name:`${item.context_name} — copie`,created_by:user.id})
+    load()
+  }
+  return <>
+    <div className="toolbar"><div><h3>Progression pédagogique</h3><p>Contextes, périodes, compétences et transversalités économie-droit.</p></div>{!readOnly&&<button className="btn primary" onClick={()=>setOpen(true)}><Plus/>Ajouter un contexte</button>}</div>
+    <div className="timeline">{items.map(i=><div className="timeline-item" key={i.id}><div className="dot"/><div className="grow"><strong>{i.context_name}</strong><span>{i.period_id} • {i.item_kind} • {i.learning_level || 'niveau non précisé'} • {i.duration_hours||0} h</span><p>{i.notes||''}</p><div className="row wrap mini-meta"><span className="badge info">{i.competencies?.length||0} compétence(s)</span><span className="badge muted">{i.econ_law_links?.length||0} lien(s) éco-droit</span></div></div>{!readOnly&&<div className="row"><button className="icon-btn" title="Dupliquer" onClick={()=>duplicate(i)}><Plus/></button><button className="icon-btn" title="Modifier" onClick={()=>setEditItem(i)}><Pencil/></button><button className="icon-btn danger-text" title="Supprimer" onClick={()=>remove(i.id)}><Trash2/></button></div>}</div>)}{items.length===0&&<div className="empty-state compact"><BookOpenCheck size={40}/><h3>Progression vide</h3><p>Ajoutez votre premier contexte pédagogique.</p></div>}</div>
+    {!readOnly&&open&&<AddProgressionModal klass={klass} onClose={()=>setOpen(false)} onCreated={()=>{setOpen(false);load()}}/>}
+    {!readOnly&&editItem&&<AddProgressionModal klass={klass} initial={editItem} onClose={()=>setEditItem(null)} onCreated={()=>{setEditItem(null);load()}}/>}
+  </>
+}
+
+function AddProgressionModal({klass,onClose,onCreated,initial=null}) {
+  const [competencies,setCompetencies]=useState([])
+  const [econ,setEcon]=useState([])
+  const [f,setF]=useState(initial?{item_kind:initial.item_kind||'contexte',period_id:initial.period_id||'P1',context_name:initial.context_name||'',learning_level:initial.learning_level||'Découverte',duration_hours:initial.duration_hours||2,notes:initial.notes||'',competencies:initial.competencies||[],econ_law_links:initial.econ_law_links||[]}:{item_kind:'contexte',period_id:'P1',context_name:'',learning_level:'Découverte',duration_hours:2,notes:'',competencies:[],econ_law_links:[]})
+  const [error,setError]=useState('')
+  useEffect(()=>{Promise.all([supabase.from('pp_competencies').select('code,label,group_code').eq('diploma_code',klass.diploma_code).is('parent_code',null).order('sort_order'),supabase.from('pp_econ_law_items').select('*').order('sort_order')]).then(([c,e])=>{setCompetencies(c.data||[]);setEcon(e.data||[])})},[])
+  function toggle(arr,key){return arr.includes(key)?arr.filter(x=>x!==key):[...arr,key]}
+  async function submit(e){e.preventDefault();const {data:{user}}=await supabase.auth.getUser();const query=initial?supabase.from('pp_progression_items').update({...f,updated_at:new Date().toISOString()}).eq('id',initial.id):supabase.from('pp_progression_items').insert({...f,class_id:klass.id,created_by:user.id});const {error}=await query;if(error)setError(toastError(error));else onCreated()}
+  return <Modal title={initial?"Modifier le contexte":"Ajouter un contexte"} onClose={onClose}><form className="form-grid" onSubmit={submit}><label>Nom du contexte<input value={f.context_name} onChange={e=>setF({...f,context_name:e.target.value})} required/></label><label>Période<select value={f.period_id} onChange={e=>setF({...f,period_id:e.target.value})}>{['P1','P2','P3','P4','P5'].map(x=><option key={x}>{x}</option>)}</select></label><label>Niveau d'apprentissage<select value={f.learning_level} onChange={e=>setF({...f,learning_level:e.target.value})}><option>Découverte</option><option>Approfondissement</option><option>Consolidation</option><option>Évaluation</option></select></label><label>Durée (heures)<input type="number" step="0.5" min="0.5" value={f.duration_hours} onChange={e=>setF({...f,duration_hours:Number(e.target.value)})}/></label><label className="full">Notes<textarea rows="3" value={f.notes} onChange={e=>setF({...f,notes:e.target.value})}/></label><div className="full"><strong className="field-title">Compétences principales</strong><div className="chip-grid">{competencies.map(c=><button type="button" className={f.competencies.includes(c.code)?'chip selected':'chip'} key={c.code} onClick={()=>setF({...f,competencies:toggle(f.competencies,c.code)})}>{c.code} {c.label}</button>)}</div></div><div className="full"><strong className="field-title">Transversalités économie-droit</strong><div className="chip-grid scrollbox">{econ.map(c=><button type="button" className={f.econ_law_links.includes(c.code)?'chip selected':'chip'} key={c.code} onClick={()=>setF({...f,econ_law_links:toggle(f.econ_law_links,c.code)})}>{c.code} {c.question_label}</button>)}</div></div>{error&&<div className="form-message">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary">{initial?"Enregistrer":"Ajouter"}</button></div></form></Modal>
+}
+
+function QuickEvaluationTab({ klass, readOnly=false }) {
+  const [mode,setMode]=useState('matrix')
+  const [students,setStudents]=useState([]),[competencies,setCompetencies]=useState([]),[progression,setProgression]=useState([]),[progressionItem,setProgressionItem]=useState(''),[student,setStudent]=useState(''),[competency,setCompetency]=useState(''),[level,setLevel]=useState('A'),[observation,setObservation]=useState(''),[message,setMessage]=useState(''),[recent,setRecent]=useState([])
+  const [bulkLevels,setBulkLevels]=useState({}),[bulkBusy,setBulkBusy]=useState(false),[bulkGroup,setBulkGroup]=useState('')
+  const [studentGroup,setStudentGroup]=useState('')
+  const [classSettings,setClassSettings]=useState(null)
+  const [autoAdvance,setAutoAdvance]=useState(true)
+  const [sessionEvaluated,setSessionEvaluated]=useState({})
+  const [sessionLoading,setSessionLoading]=useState(false)
+
+  async function loadRecent(){
+    const ids=students.map(s=>s.id)
+    if(!ids.length){setRecent([]);return}
+    const {data}=await supabase.from('pp_teacher_evaluations').select('*, pp_students(first_name,last_name)').in('student_id',ids).order('assessed_at',{ascending:false}).limit(10)
+    setRecent(data||[])
+  }
+  async function loadSessionEvaluated(){
+    const ids=students.map(s=>s.id)
+    if(!ids.length||!competency){setSessionEvaluated({});return}
+    setSessionLoading(true)
+    let query=supabase.from('pp_teacher_evaluations').select('id,student_id,level,assessed_at').in('student_id',ids).eq('competency_code',competency).order('assessed_at',{ascending:false})
+    query=progressionItem?query.eq('progression_item_id',progressionItem):query.is('progression_item_id',null)
+    const {data}=await query
+    const map={}
+    for(const row of data||[]) if(!map[row.student_id]) map[row.student_id]=row
+    setSessionEvaluated(map);setSessionLoading(false)
+  }
+  useEffect(()=>{
+    Promise.all([
+      supabase.from('pp_students').select('id,last_name,first_name,group_name').eq('class_id',klass.id).order('last_name'),
+      supabase.from('pp_competencies').select('code,label,group_code,parent_code').eq('diploma_code',klass.diploma_code).order('sort_order'),
+      supabase.from('pp_progression_items').select('id,context_name,period_id,competencies').eq('class_id',klass.id).order('sort_order').order('created_at'),
+      supabase.from('pp_class_settings').select('display_level_labels,quick_eval_defaults').eq('class_id',klass.id).maybeSingle()
+    ]).then(([s,c,p,cs])=>{setStudents(s.data||[]);setCompetencies(c.data||[]);setProgression(p.data||[]);setClassSettings(cs.data||null)})
+  },[klass.id,klass.diploma_code])
+  useEffect(()=>{
+    if(!classSettings)return
+    const q=classSettings.quick_eval_defaults||{}
+    setAutoAdvance(q.auto_advance??true)
+    if(q.remember_last_context){const v=localStorage.getItem(`pp_last_context_${klass.id}`);if(v)setProgressionItem(v)}
+    if(q.remember_last_competency){const v=localStorage.getItem(`pp_last_comp_${klass.id}`);if(v)setCompetency(v)}
+  },[classSettings,klass.id])
+  useEffect(()=>{if(students.length)loadRecent();else setRecent([])},[students.length])
+  useEffect(()=>{loadSessionEvaluated()},[competency,progressionItem,students.length])
+
+  const selectedProgression=progression.find(p=>p.id===progressionItem)
+  const allowedCompetencies=useMemo(()=>{
+    const detailed=competencies.filter(c=>c.parent_code)
+    if(!selectedProgression?.competencies?.length)return detailed
+    const parents=selectedProgression.competencies.map(x=>typeof x==='string'?x:(x.code||x.parent_code||x.comp_code)).filter(Boolean)
+    return detailed.filter(c=>parents.includes(c.parent_code)||parents.includes(c.code))
+  },[competencies,selectedProgression])
+  const groups=useMemo(()=>[...new Set(students.map(s=>s.group_name).filter(Boolean))].sort(),[students])
+  const individualStudents=studentGroup?students.filter(s=>s.group_name===studentGroup):students
+  const currentIndex=individualStudents.findIndex(s=>s.id===student)
+  const currentStudent=students.find(s=>s.id===student)
+  const bulkGroups=groups
+  const bulkStudents=bulkGroup?students.filter(s=>s.group_name===bulkGroup):students
+  const currentSessionCount=individualStudents.filter(s=>sessionEvaluated[s.id]).length
+
+  useEffect(()=>{
+    if(!individualStudents.length){setStudent('');return}
+    if(!individualStudents.some(s=>s.id===student))setStudent(individualStudents[0].id)
+  },[studentGroup,students.length])
+
+  function moveStudent(delta){
+    if(!individualStudents.length)return
+    const idx=currentIndex>=0?currentIndex:0
+    const next=(idx+delta+individualStudents.length)%individualStudents.length
+    setStudent(individualStudents[next].id)
+  }
+  async function removeRecent(id){
+    if(!confirm('Annuler cette saisie ?'))return
+    const {error}=await supabase.from('pp_teacher_evaluations').delete().eq('id',id)
+    if(error){setMessage(toastError(error));return}
+    await Promise.all([loadRecent(),loadSessionEvaluated()])
+  }
+  function fillBulk(lvl){setBulkLevels(Object.fromEntries(bulkStudents.map(s=>[s.id,lvl])))}
+  async function save(e){
+    e.preventDefault();setMessage('')
+    const {data:{user}}=await supabase.auth.getUser()
+    const c=competencies.find(x=>x.code===competency)
+    if(!student||!c){setMessage('Choisissez un élève et une compétence.');return}
+    const {data,error}=await supabase.from('pp_teacher_evaluations').insert({student_id:student,progression_item_id:progressionItem||null,competency_code:c.code,competency_label:c.label,competency_group:c.group_code,level,source_type:'context',source_label:selectedProgression?.context_name||`Évaluation rapide — ${klass.name}`,observation:classSettings?.quick_eval_defaults?.show_observation===false?null:observation,assessed_by:user.id}).select('id,student_id,level,assessed_at').single()
+    if(error){setMessage(toastError(error));return}
+    const q=classSettings?.quick_eval_defaults||{}
+    if(q.remember_last_context)localStorage.setItem(`pp_last_context_${klass.id}`,progressionItem||'')
+    if(q.remember_last_competency)localStorage.setItem(`pp_last_comp_${klass.id}`,competency||'')
+    setObservation('')
+    setSessionEvaluated(prev=>({...prev,[student]:data}))
+    await loadRecent()
+    if(autoAdvance&&individualStudents.length>1){moveStudent(1);setMessage('Évaluation enregistrée — élève suivant.')}else setMessage('Évaluation enregistrée.')
+  }
+  async function saveBulk(){
+    const c=competencies.find(x=>x.code===competency)
+    const entries=Object.entries(bulkLevels).filter(([,v])=>v)
+    if(!c||!entries.length){setMessage('Choisissez une compétence et positionnez au moins un élève.');return}
+    setBulkBusy(true);setMessage('')
+    const {data:{user}}=await supabase.auth.getUser()
+    const rows=entries.map(([student_id,lvl])=>({student_id,progression_item_id:progressionItem||null,competency_code:c.code,competency_label:c.label,competency_group:c.group_code,level:lvl,source_type:'context',source_label:selectedProgression?.context_name||`Évaluation de classe — ${klass.name}`,assessed_by:user.id}))
+    const {error}=await supabase.from('pp_teacher_evaluations').insert(rows)
+    if(error)setMessage(toastError(error));else{setMessage(`${rows.length} positionnement(s) enregistré(s).`);setBulkLevels({});await Promise.all([loadRecent(),loadSessionEvaluated()])}
+    setBulkBusy(false)
+  }
+  return <EvaluationMatrix klass={klass} readOnly={readOnly}/>
+  if(readOnly) return <div className="empty-state compact"><Eye/><h3>Classe en lecture seule</h3><p>Vous pouvez consulter les données, mais seul un propriétaire ou un éditeur peut saisir des évaluations.</p></div>
+
+  return <div className="tablet-evaluation-workspace">
+    <div className="segmented mode-switch"><button onClick={()=>setMode('matrix')}>Grille V14.1</button><button className={mode==='individual'?'active':''} onClick={()=>setMode('individual')}>Évaluation individuelle</button><button className={mode==='class'?'active':''} onClick={()=>setMode('class')}>Mode classe</button></div>
+    {mode==='individual'?<div className="evaluation-layout tablet-evaluation-layout"><form className="evaluation-card tablet-evaluation-card" onSubmit={save}>
+      <div className="tablet-eval-head"><div><span className="eyebrow">Saisie tablette</span><h3>Évaluation rapide</h3><p>Contexte + compétence restent mémorisés ; vous pouvez enchaîner les élèves.</p></div><label className="tablet-auto-next"><input type="checkbox" checked={autoAdvance} onChange={e=>setAutoAdvance(e.target.checked)}/>Élève suivant automatiquement</label></div>
+      <div className="tablet-context-grid"><label>Contexte / activité<select value={progressionItem} onChange={e=>{setProgressionItem(e.target.value);setCompetency('')}}><option value="">Sans contexte associé</option>{progression.map(p=><option key={p.id} value={p.id}>{p.period_id} — {p.context_name}</option>)}</select></label><label>Groupe d’élèves<select value={studentGroup} onChange={e=>setStudentGroup(e.target.value)}><option value="">Toute la classe</option>{groups.map(g=><option key={g}>{g}</option>)}</select></label></div>
+      <label>Compétence<select value={competency} onChange={e=>setCompetency(e.target.value)} required><option value="">Choisir…</option>{allowedCompetencies.map(c=><option key={c.code} value={c.code}>{c.code} — {c.label}</option>)}</select></label>
+      <div className="tablet-student-picker"><button type="button" className="tablet-nav-btn" onClick={()=>moveStudent(-1)} disabled={individualStudents.length<2}><ArrowLeft/></button><div className="tablet-student-card"><span>{individualStudents.length?`${currentIndex+1} / ${individualStudents.length}`:'0 / 0'}</span><strong>{currentStudent?`${currentStudent.last_name} ${currentStudent.first_name}`:'Aucun élève'}</strong><small>{currentStudent?.group_name||'Toute la classe'}</small>{currentStudent&&sessionEvaluated[currentStudent.id]&&<em>Déjà positionné : {sessionEvaluated[currentStudent.id].level}</em>}</div><button type="button" className="tablet-nav-btn" onClick={()=>moveStudent(1)} disabled={individualStudents.length<2}><ChevronRight/></button></div>
+      <div className="tablet-session-progress"><div><b>{currentSessionCount}</b><span>élève(s) déjà saisi(s)</span></div><div className="bar-track"><div className="bar-fill" style={{width:`${individualStudents.length?Math.round(currentSessionCount/individualStudents.length*100):0}%`}}/></div><small>{sessionLoading?'Actualisation…':`${Math.max(0,individualStudents.length-currentSessionCount)} restant(s)`}</small></div>
+      <div className="level-grid tablet-level-grid">{LEVELS.map(l=><button type="button" key={l.code} className={level===l.code?`level active level-${l.code}`:`level level-${l.code}`} onClick={()=>setLevel(l.code)}><strong>{l.code}</strong><span>{classSettings?.display_level_labels?.[l.code]||l.label}</span></button>)}</div>
+      {classSettings?.quick_eval_defaults?.show_observation!==false&&<label>Observation<textarea rows="3" value={observation} onChange={e=>setObservation(e.target.value)} placeholder="Observation rapide…"/></label>}
+      {message&&<div className={message.toLowerCase().includes('erreur')?'form-message':'form-message success'}>{message}</div>}
+      <button className="btn primary wide tablet-save-btn" disabled={!student||!competency}><Save/>{autoAdvance?'Enregistrer et passer au suivant':'Enregistrer l’évaluation'}</button>
+    </form><div className="panel recent-panel"><div className="panel-head"><div><h3>Dernières saisies</h3><p>Annulation rapide en cas d’erreur.</p></div></div>{recent.map(r=><div className="recent-row" key={r.id}><div><strong>{r.pp_students?.last_name} {r.pp_students?.first_name}</strong><span>{r.competency_code} • {r.competency_label}</span></div><div className="row"><LevelBadge level={r.level}/><button type="button" className="icon-btn danger-text" title="Annuler la saisie" onClick={()=>removeRecent(r.id)}><RotateCcw/></button></div></div>)}{!recent.length&&<div className="small-empty">Aucune saisie récente.</div>}</div></div>:
+      <div className="panel tablet-class-eval"><div className="panel-head"><div><h3>Positionner toute la classe</h3><p>Choisissez une compétence puis touchez le niveau de chaque élève. Les badges discrets indiquent les saisies déjà existantes pour ce contexte.</p></div><button className="btn primary" onClick={saveBulk} disabled={bulkBusy}><Save/>{bulkBusy?'Enregistrement…':'Enregistrer la classe'}</button></div><div className="bulk-selectors"><label>Contexte / activité<select value={progressionItem} onChange={e=>{setProgressionItem(e.target.value);setCompetency('');setBulkLevels({})}}><option value="">Sans contexte associé</option>{progression.map(p=><option key={p.id} value={p.id}>{p.period_id} — {p.context_name}</option>)}</select></label><label>Compétence<select value={competency} onChange={e=>{setCompetency(e.target.value);setBulkLevels({})}}><option value="">Choisir…</option>{allowedCompetencies.map(c=><option key={c.code} value={c.code}>{c.code} — {c.label}</option>)}</select></label><label>Groupe<select value={bulkGroup} onChange={e=>{setBulkGroup(e.target.value);setBulkLevels({})}}><option value="">Toute la classe</option>{bulkGroups.map(g=><option key={g}>{g}</option>)}</select></label></div><div className="row wrap bulk-fill"><span className="muted">Positionner tous les élèves affichés :</span>{['N','D','A','E','NE'].map(l=><button type="button" key={l} className="btn small" onClick={()=>fillBulk(l)}>{l}</button>)}<button type="button" className="btn small" onClick={()=>setBulkLevels({})}>Effacer</button></div>{message&&<div className="form-message success">{message}</div>}<div className="bulk-eval-list">{bulkStudents.map(s=><div className="bulk-student" key={s.id}><div className="bulk-student-name"><strong>{s.last_name} {s.first_name}</strong><span>{s.group_name||''}</span>{sessionEvaluated[s.id]&&<small className="previous-level">Déjà : {sessionEvaluated[s.id].level}</small>}</div><div className="bulk-buttons">{LEVELS.map(l=><button type="button" key={l.code} className={bulkLevels[s.id]===l.code?`bulk-level active level-${l.code}`:'bulk-level'} onClick={()=>setBulkLevels({...bulkLevels,[s.id]:l.code})}>{l.code}</button>)}</div></div>)}{!students.length&&<div className="small-empty">Aucun élève.</div>}</div></div>}
+  </div>
+}
+
+function PfmpClassTab({klass, readOnly=false}) {
+  const [periods,setPeriods]=useState([])
+  const [students,setStudents]=useState([])
+  const [debriefs,setDebriefs]=useState([])
+  const [open,setOpen]=useState(false)
+  const [editPeriod,setEditPeriod]=useState(null)
+  async function load(){
+    const [p,s]=await Promise.all([
+      supabase.from('pp_pfmp_periods').select('*').eq('class_id',klass.id).order('sort_order'),
+      supabase.from('pp_students').select('id,class_id,last_name,first_name,group_name').eq('class_id',klass.id).order('last_name')
+    ])
+    setPeriods(p.data||[]);setStudents(s.data||[])
+    const ids=(s.data||[]).map(x=>x.id)
+    if(ids.length){const d=await supabase.from('pp_pfmp_debriefs').select('*').in('student_id',ids).order('debrief_date',{ascending:false});setDebriefs(d.data||[])}else setDebriefs([])
+  }
+  useEffect(()=>{load()},[klass.id])
+  async function remove(id){if(!confirm('Supprimer cette période PFMP ? Les débriefs associés conserveront leur historique mais ne seront plus rattachés à la période.'))return;await supabase.from('pp_pfmp_periods').delete().eq('id',id);load()}
+  const anyDebrief=new Set(debriefs.map(d=>d.student_id)).size
+  const expected=students.length*Math.max(periods.length,1)
+  const linked=debriefs.filter(d=>d.pfmp_period_id).length
+  const coverage=periods.length&&students.length?Math.min(100,Math.round((linked/(students.length*periods.length))*100)):0
+  const cell=(studentId,periodId)=>debriefs.find(d=>d.student_id===studentId&&d.pfmp_period_id===periodId)
+  function exportCsv(){
+    const esc=v=>`"${String(v??'').replaceAll('"','""')}"`
+    const rows=[['Nom','Prénom','Groupe',...periods.map(p=>p.label)],...students.map(st=>[st.last_name,st.first_name,st.group_name,...periods.map(p=>{const d=cell(st.id,p.id);return d?`${d.company||'Débrief'} — ${new Date(d.debrief_date).toLocaleDateString('fr-FR')}`:''})])]
+    downloadTextFile('\uFEFF'+rows.map(r=>r.map(esc).join(';')).join('\n'),`PFMP_${klass.name.replace(/\s+/g,'_')}.csv`,'text/csv;charset=utf-8')
+  }
+  return <>
+    <div className="summary-cards class-summary-cards"><div className="summary-card accent"><span>Couverture des débriefs</span><strong>{coverage}%</strong><small>Débriefs rattachés aux périodes</small></div><div className="summary-card"><span>Élèves avec suivi PFMP</span><strong>{anyDebrief} / {students.length}</strong><small>Au moins un débrief</small></div><div className="summary-card"><span>Périodes configurées</span><strong>{periods.length}</strong><small>{debriefs.length} débrief(s) au total</small></div></div>
+    <div className="toolbar wrap"><div><h3>Suivi PFMP de la classe</h3><p>Les dates sont propres à cette classe et se répercutent dans la progression personnelle.</p></div><div className="row">{periods.length>0&&<button className="btn" onClick={exportCsv}><Download/>Exporter CSV</button>}{!readOnly&&<button className="btn primary" onClick={()=>{setEditPeriod(null);setOpen(true)}}><Plus/>Nouvelle période</button>}</div></div>
+    {periods.length>0&&students.length>0&&<PfmpInline klass={klass} students={students} periods={periods} readOnly={readOnly} onSaved={load}/>}
+    {periods.length>0&&<div className="cards-list period-list">{periods.map(p=><div className="document-row" key={p.id}><div className="doc-icon"><CalendarDays/></div><div><strong>{p.label}</strong><span>{p.start_date||'Date non définie'} → {p.end_date||'Date non définie'}</span></div>{!readOnly&&<div className="row"><button className="icon-btn" onClick={()=>{setEditPeriod(p);setOpen(true)}} title="Modifier les dates"><Pencil/></button><button className="icon-btn danger-text" onClick={()=>remove(p.id)} title="Supprimer"><Trash2/></button></div>}</div>)}</div>}
+    {periods.length>0?<div className="table-card pfmp-matrix"><table><thead><tr><th>Élève</th>{periods.map(p=><th key={p.id}>{p.label}</th>)}</tr></thead><tbody>{students.map(st=><tr key={st.id}><td><strong>{st.last_name} {st.first_name}</strong><div className="cell-sub">{st.group_name||''}</div></td>{periods.map(p=>{const d=cell(st.id,p.id);return <td key={p.id}>{d?<div><span className="badge success">Débrief fait</span><div className="cell-sub">{d.company||new Date(d.debrief_date).toLocaleDateString('fr-FR')}</div></div>:<span className="badge muted">À faire</span>}</td>})}</tr>)}</tbody></table>{!students.length&&<div className="small-empty">Aucun élève.</div>}</div>:<div className="empty-state compact"><BriefcaseBusiness/><h3>Aucune PFMP configurée</h3><p>Créez une période pour commencer le suivi.</p></div>}
+    
+    {!readOnly&&open&&<PfmpPeriodModal klass={klass} initial={editPeriod} onClose={()=>{setOpen(false);setEditPeriod(null)}} onSaved={()=>{setOpen(false);setEditPeriod(null);load()}}/>}
+  </>
+}
+
+function PfmpPeriodModal({klass,initial=null,onClose,onSaved}) {
+  const [f,setF]=useState({label:initial?.label||'PFMP 1',start_date:initial?.start_date||'',end_date:initial?.end_date||'',sort_order:initial?.sort_order||10})
+  const [error,setError]=useState('')
+  async function submit(e){
+    e.preventDefault();setError('')
+    if(f.start_date&&f.end_date&&f.end_date<f.start_date){setError('La date de fin doit être postérieure à la date de début.');return}
+    const payload={label:f.label.trim(),start_date:f.start_date||null,end_date:f.end_date||null,sort_order:Number(f.sort_order||10)}
+    const q=initial?supabase.from('pp_pfmp_periods').update(payload).eq('id',initial.id):supabase.from('pp_pfmp_periods').insert({...payload,class_id:klass.id})
+    const {error}=await q
+    if(error){setError(toastError(error));return}
+    onSaved()
+  }
+  return <Modal title={initial?'Modifier la période PFMP':'Nouvelle période PFMP'} onClose={onClose}><form className="form-grid" onSubmit={submit}><label>Libellé<input value={f.label} onChange={e=>setF({...f,label:e.target.value})} required/></label><label>Ordre<input type="number" value={f.sort_order} onChange={e=>setF({...f,sort_order:Number(e.target.value)})}/></label><label>Début<input type="date" value={f.start_date} onChange={e=>setF({...f,start_date:e.target.value})}/></label><label>Fin<input type="date" value={f.end_date} onChange={e=>setF({...f,end_date:e.target.value})}/></label>{error&&<div className="form-message">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary"><Save/>{initial?'Enregistrer':'Créer'}</button></div></form></Modal>
+}
+
+
+function CcfClassTab({klass, readOnly=false}) {
+  const [exams,setExams]=useState([])
+  const [students,setStudents]=useState([])
+  const [results,setResults]=useState([])
+  const [documents,setDocuments]=useState([])
+  const [requirements,setRequirements]=useState([])
+  const [drafts,setDrafts]=useState({})
+  const [message,setMessage]=useState('')
+  const [reqForm,setReqForm]=useState({exam_code:'',title:'',instructions:'',required:true})
+  const [ccfQuery,setCcfQuery]=useState('')
+  const [ccfGroup,setCcfGroup]=useState('')
+  const [ccfExamFilter,setCcfExamFilter]=useState('')
+  const [ccfStatusFilter,setCcfStatusFilter]=useState('all')
+  async function load(){
+    const [e,s,q]=await Promise.all([
+      supabase.from('pp_exams').select('*').eq('diploma_code',klass.diploma_code).order('sort_order'),
+      supabase.from('pp_students').select('id,last_name,first_name,group_name').eq('class_id',klass.id).order('last_name'),
+      supabase.from('pp_ccf_document_requirements').select('*').eq('class_id',klass.id).eq('active',true).order('exam_code').order('sort_order')
+    ])
+    const examRows=(e.data||[]).filter(ex=>klass.diploma_code!=='ACCUEIL'||['E31','E32'].includes(ex.code))
+    setExams(examRows);setStudents(s.data||[]);setRequirements(q.data||[])
+    const trackedRows=examRows.filter(x=>['ccf','mixte'].includes(x.assessment_mode))
+    setReqForm(f=>({...f,exam_code:trackedRows.some(x=>x.code===f.exam_code)?f.exam_code:(trackedRows[0]?.code||'')}))
+    const ids=(s.data||[]).map(x=>x.id)
+    if(ids.length){
+      const resultPromise=trackedRows.length
+        ? supabase.from('pp_exam_results').select('*').in('student_id',ids).in('exam_code',trackedRows.map(x=>x.code))
+        : Promise.resolve({data:[],error:null})
+      const [r,d]=await Promise.all([
+        resultPromise,
+        supabase.from('pp_documents').select('id,student_id,exam_code,requirement_id,status,document_scope,uploaded_at').in('student_id',ids).eq('document_scope','ccf')
+      ])
+      setResults(r.data||[])
+      setDocuments(d.data||[])
+      setDrafts(Object.fromEntries((r.data||[]).map(x=>[`${x.student_id}|${x.exam_code}`,x.proposed_score??x.score??''])))
+    }else{setResults([]);setDocuments([]);setDrafts({})}
+  }
+  useEffect(()=>{load()},[klass.id,klass.diploma_code])
+  const tracked=exams.filter(e=>['ccf','mixte'].includes(e.assessment_mode))
+  const resultMap=useMemo(()=>Object.fromEntries(results.map(r=>[`${r.student_id}|${r.exam_code}`,r])),[results])
+  const proposedScore=r=>r?.proposed_score??r?.score??null
+  const validatedScore=r=>r?.validated_score??(r?.status==='valide'?r?.score:null)
+  const requirementDocState=useMemo(()=>{
+    const map=new Map()
+    for(const d of documents){
+      if(!d.requirement_id)continue
+      const key=`${d.student_id}|${d.requirement_id}`
+      const current=map.get(key)||{present:false,validated:false,correction:false}
+      current.present=true
+      if(d.status==='valide')current.validated=true
+      if(d.status==='a_corriger')current.correction=true
+      map.set(key,current)
+    }
+    return map
+  },[documents])
+  const correctionCountMap=useMemo(()=>{
+    const map=new Map()
+    for(const d of documents){
+      if(d.document_scope!=='ccf'||d.status!=='a_corriger')continue
+      const allKey=`${d.student_id}|*`
+      const examKey=`${d.student_id}|${d.exam_code||''}`
+      map.set(allKey,(map.get(allKey)||0)+1)
+      map.set(examKey,(map.get(examKey)||0)+1)
+    }
+    return map
+  },[documents])
+  const expected=students.length*tracked.length
+  const completed=results.filter(r=>tracked.some(e=>e.code===r.exam_code)&&proposedScore(r)!=null).length
+  const validatedNotes=results.filter(r=>tracked.some(e=>e.code===r.exam_code)&&validatedScore(r)!=null).length
+  const completion=expected?Math.round((validatedNotes/expected)*100):0
+  const requiredReqs=requirements.filter(r=>r.required)
+  const requiredExpected=students.length*requiredReqs.length
+  const presentRequired=students.reduce((n,st)=>n+requiredReqs.filter(req=>requirementDocState.get(`${st.id}|${req.id}`)?.present).length,0)
+  const validatedRequired=students.reduce((n,st)=>n+requiredReqs.filter(req=>requirementDocState.get(`${st.id}|${req.id}`)?.validated).length,0)
+  const completeStudents=students.filter(st=>requiredReqs.length>0&&requiredReqs.every(req=>requirementDocState.get(`${st.id}|${req.id}`)?.present)).length
+  const readyStudents=students.filter(st=>{
+    const notesReady=tracked.every(e=>validatedScore(resultMap[`${st.id}|${e.code}`])!=null)
+    const docsReady=requiredReqs.length===0||requiredReqs.every(req=>requirementDocState.get(`${st.id}|${req.id}`)?.validated)
+    const correctionPending=(correctionCountMap.get(`${st.id}|*`)||0)>0
+    return notesReady&&docsReady&&!correctionPending
+  }).length
+  function weightedAverage(studentId){
+    let num=0,den=0
+    for(const e of tracked){
+      const value=validatedScore(resultMap[`${studentId}|${e.code}`])
+      if(value!=null){const c=Number(e.coefficient||1);num+=Number(value)*c;den+=c}
+    }
+    return den?num/den:null
+  }
+  function examDocProgress(studentId,examCode){
+    const reqs=requiredReqs.filter(r=>r.exam_code===examCode)
+    const present=reqs.filter(r=>requirementDocState.get(`${studentId}|${r.id}`)?.present).length
+    const validated=reqs.filter(r=>requirementDocState.get(`${studentId}|${r.id}`)?.validated).length
+    return {required:reqs.length,present,validated}
+  }
+  function ccfStatus(student,examCode=''){
+    const scopedExams=examCode?tracked.filter(e=>e.code===examCode):tracked
+    const scopedReqs=examCode?requiredReqs.filter(r=>r.exam_code===examCode):requiredReqs
+    const scoreMissing=scopedExams.filter(e=>validatedScore(resultMap[`${student.id}|${e.code}`])==null).length
+    const missingDocs=scopedReqs.filter(req=>!requirementDocState.get(`${student.id}|${req.id}`)?.present).length
+    const unvalidatedDocs=scopedReqs.filter(req=>{
+      const state=requirementDocState.get(`${student.id}|${req.id}`)
+      return state?.present&&!state.validated
+    }).length
+    const corrections=correctionCountMap.get(`${student.id}|${examCode||'*'}`)||0
+    const ready=scoreMissing===0&&missingDocs===0&&unvalidatedDocs===0&&corrections===0
+    return {scoreMissing,missingDocs,unvalidatedDocs,corrections,ready}
+  }
+  const groups=[...new Set(students.map(s=>s.group_name).filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'fr'))
+  const visibleTracked=ccfExamFilter?tracked.filter(e=>e.code===ccfExamFilter):tracked
+  const filteredStudents=students.filter(st=>{
+    const hay=`${st.last_name} ${st.first_name}`.toLowerCase()
+    if(ccfQuery.trim()&&!hay.includes(ccfQuery.trim().toLowerCase()))return false
+    if(ccfGroup&&st.group_name!==ccfGroup)return false
+    const status=ccfStatus(st,ccfExamFilter)
+    if(ccfStatusFilter==='ready'&&!status.ready)return false
+    if(ccfStatusFilter==='incomplete'&&status.ready)return false
+    if(ccfStatusFilter==='missing_doc'&&status.missingDocs===0)return false
+    if(ccfStatusFilter==='correction'&&status.corrections===0)return false
+    if(ccfStatusFilter==='missing_note'&&status.scoreMissing===0)return false
+    return true
+  })
+  const classAlerts=students.reduce((acc,st)=>{
+    const status=ccfStatus(st)
+    if(status.missingDocs>0)acc.missingDocs++
+    if(status.corrections>0)acc.corrections++
+    if(status.scoreMissing>0)acc.missingNotes++
+    if(!status.ready)acc.incomplete++
+    return acc
+  },{missingDocs:0,corrections:0,missingNotes:0,incomplete:0})
+  async function saveScore(student,exam){
+    if(readOnly)return
+    const key=`${student.id}|${exam.code}`
+    const raw=drafts[key]??''
+    if(raw!==''&&(Number(raw)<0||Number(raw)>20)){setMessage('La note doit être comprise entre 0 et 20.');return}
+    const existing=resultMap[key]
+    const nextValue=raw===''?null:Number(raw)
+    const previous=proposedScore(existing)
+    if((nextValue==null&&previous==null)||(nextValue!=null&&previous!=null&&Number(previous)===nextValue))return
+    const {data:{user}}=await supabase.auth.getUser()
+    const now=new Date().toISOString()
+    const payload={
+      student_id:student.id,
+      exam_code:exam.code,
+      exam_label:exam.label,
+      score:nextValue,
+      proposed_score:nextValue,
+      validated_score:null,
+      validated_at:null,
+      validated_by:null,
+      coefficient:exam.coefficient,
+      status:nextValue==null?'non_evalue':'en_cours',
+      comment:existing?.comment||null,
+      assessed_by:user.id,
+      assessed_at:now,
+      updated_at:now
+    }
+    const {error}=await supabase.from('pp_exam_results').upsert(payload,{onConflict:'student_id,exam_code'})
+    if(error)setMessage(toastError(error));else{setMessage(`Note proposée enregistrée pour ${student.first_name} ${student.last_name} — ${exam.code}. Elle reste à valider.`);await load()}
+  }
+  async function validateScore(student,exam){
+    if(readOnly)return
+    const key=`${student.id}|${exam.code}`
+    const existing=resultMap[key]
+    const value=drafts[key]===''?proposedScore(existing):Number(drafts[key])
+    if(value==null||Number.isNaN(Number(value))){setMessage('Saisissez d’abord une note proposée.');return}
+    if(Number(value)<0||Number(value)>20){setMessage('La note doit être comprise entre 0 et 20.');return}
+    const {data:{user}}=await supabase.auth.getUser()
+    const now=new Date().toISOString()
+    const payload={
+      student_id:student.id,
+      exam_code:exam.code,
+      exam_label:exam.label,
+      score:Number(value),
+      proposed_score:Number(value),
+      validated_score:Number(value),
+      validated_at:now,
+      validated_by:user.id,
+      coefficient:exam.coefficient,
+      status:'valide',
+      comment:existing?.comment||null,
+      assessed_by:user.id,
+      assessed_at:existing?.assessed_at||now,
+      updated_at:now
+    }
+    const {error}=await supabase.from('pp_exam_results').upsert(payload,{onConflict:'student_id,exam_code'})
+    if(error)setMessage(toastError(error));else{setMessage(`Note CCF validée pour ${student.first_name} ${student.last_name} — ${exam.code}.`);await load()}
+  }
+  async function addRequirement(e){
+    e.preventDefault()
+    if(readOnly)return
+    if(!reqForm.exam_code||!reqForm.title.trim()){setMessage('Choisissez une épreuve et indiquez le nom de la pièce attendue.');return}
+    const {data:{user}}=await supabase.auth.getUser()
+    const existing=requirements.filter(r=>r.exam_code===reqForm.exam_code)
+    const sort_order=(existing.reduce((m,r)=>Math.max(m,Number(r.sort_order||0)),0)||0)+10
+    const {error}=await supabase.from('pp_ccf_document_requirements').insert({
+      class_id:klass.id,
+      exam_code:reqForm.exam_code,
+      title:reqForm.title.trim(),
+      instructions:reqForm.instructions.trim()||null,
+      required:!!reqForm.required,
+      active:true,
+      sort_order,
+      created_by:user.id
+    })
+    if(error)setMessage(toastError(error));else{setMessage('Pièce attendue ajoutée au dossier CCF.');setReqForm({...reqForm,title:'',instructions:'',required:true});await load()}
+  }
+  async function removeRequirement(req){
+    if(readOnly)return
+    if(!confirm(`Retirer « ${req.title} » de la liste des pièces attendues ? Les documents déjà déposés seront conservés comme pièces complémentaires.`))return
+    const {error}=await supabase.from('pp_ccf_document_requirements').delete().eq('id',req.id)
+    if(error)setMessage(toastError(error));else{setMessage('Pièce attendue retirée.');await load()}
+  }
+  function exportCsv(){
+    const esc=v=>`"${String(v??'').replaceAll('"','""')}"`
+    const headers=['Nom','Prénom','Groupe',...tracked.flatMap(e=>[`${e.code} note proposée`,`${e.code} note validée`,`${e.code} pièces`]),'Moyenne pondérée validée']
+    const rows=[headers,...students.map(st=>{
+      const cells=[]
+      for(const e of tracked){
+        const p=examDocProgress(st.id,e.code)
+        const r=resultMap[`${st.id}|${e.code}`]
+        cells.push(proposedScore(r)??'',validatedScore(r)??'',p.required?`${p.present}/${p.required}`:'—')
+      }
+      return [st.last_name,st.first_name,st.group_name,...cells,weightedAverage(st.id)?.toFixed(2)??'']
+    })]
+    downloadTextFile('\uFEFF'+rows.map(r=>r.map(esc).join(';')).join('\n'),`CCF_${klass.name.replace(/\s+/g,'_')}.csv`,'text/csv;charset=utf-8')
+  }
+  return <div>
+    <div className="summary-cards class-summary-cards ccf-class-summary"><div className="summary-card accent"><span>Notes CCF validées</span><strong>{completion}%</strong><small>{validatedNotes} / {expected} validées • {completed} proposées</small></div><div className="summary-card"><span>Pièces obligatoires reçues</span><strong>{requiredExpected?`${Math.round((presentRequired/requiredExpected)*100)}%`:'—'}</strong><small>{presentRequired} / {requiredExpected} pièces</small></div><div className="summary-card"><span>Pièces validées</span><strong>{requiredExpected?`${Math.round((validatedRequired/requiredExpected)*100)}%`:'—'}</strong><small>{validatedRequired} / {requiredExpected} pièces</small></div><div className="summary-card"><span>Dossiers complets</span><strong>{requiredReqs.length?`${completeStudents} / ${students.length}`:'—'}</strong><small>{requiredReqs.length?'Toutes les pièces obligatoires reçues':'Aucune pièce obligatoire configurée'}</small></div><div className="summary-card ready-card"><span>Dossiers prêts</span><strong>{students.length?`${readyStudents} / ${students.length}`:'—'}</strong><small>Notes validées + pièces validées + aucune correction</small></div></div>
+
+    {classAlerts.incomplete>0&&<div className="ccf-alert-panel"><div><AlertCircle/><div><strong>{classAlerts.incomplete} dossier(s) CCF à finaliser</strong><span>Repérez immédiatement les pièces manquantes, corrections demandées et notes non validées.</span></div></div><div className="row wrap">{classAlerts.missingDocs>0&&<button className="btn small" onClick={()=>setCcfStatusFilter('missing_doc')}>{classAlerts.missingDocs} avec pièce(s) manquante(s)</button>}{classAlerts.corrections>0&&<button className="btn small" onClick={()=>setCcfStatusFilter('correction')}>{classAlerts.corrections} à corriger</button>}{classAlerts.missingNotes>0&&<button className="btn small" onClick={()=>setCcfStatusFilter('missing_note')}>{classAlerts.missingNotes} avec note(s) non validée(s)</button>}</div></div>}

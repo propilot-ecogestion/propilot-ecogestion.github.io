@@ -1,0 +1,560 @@
+
+    <div className="panel ccf-requirements-admin">
+      <div className="panel-head"><div><h3>Pièces attendues dans le dossier CCF</h3><p>Définissez, pour chaque épreuve, les pièces obligatoires ou facultatives. Elles apparaissent ensuite automatiquement dans l’espace élève et dans le suivi professeur.</p></div></div>
+      {!readOnly&&tracked.length>0&&<form className="ccf-requirement-form" onSubmit={addRequirement}><select value={reqForm.exam_code} onChange={e=>setReqForm({...reqForm,exam_code:e.target.value})}>{tracked.map(e=><option key={e.code} value={e.code}>{e.code} — {e.label}</option>)}</select><input value={reqForm.title} onChange={e=>setReqForm({...reqForm,title:e.target.value})} placeholder="Ex. Fiche activité, annexes / preuves…" required/><input value={reqForm.instructions} onChange={e=>setReqForm({...reqForm,instructions:e.target.value})} placeholder="Consigne courte (facultatif)"/><label className="check"><input type="checkbox" checked={reqForm.required} onChange={e=>setReqForm({...reqForm,required:e.target.checked})}/>Obligatoire</label><button className="btn primary"><Plus/>Ajouter</button></form>}
+      <div className="ccf-requirements-list">{tracked.map(exam=>{const rows=requirements.filter(r=>r.exam_code===exam.code);return <div className="ccf-requirement-group" key={exam.code}><div className="ccf-requirement-group-title"><span className="exam-code">{exam.code}</span><strong>{exam.label}</strong></div>{rows.map(r=><div className="ccf-requirement-admin-row" key={r.id}><div><strong>{r.title}</strong>{r.instructions&&<small>{r.instructions}</small>}</div><div className="row"><span className={`badge ${r.required?'info':'muted'}`}>{r.required?'Obligatoire':'Facultatif'}</span>{!readOnly&&<button className="icon-btn danger-text" onClick={()=>removeRequirement(r)} title="Retirer"><Trash2/></button>}</div></div>)}{!rows.length&&<div className="small-empty">Aucune pièce attendue configurée pour cette épreuve.</div>}</div>})}</div>
+    </div>
+
+    <div className="toolbar wrap"><div><h3>Vue CCF de la classe</h3><p>{readOnly?'Consultez les notes et l’état des dossiers.':'Saisissez les notes et repérez immédiatement les pièces manquantes.'}</p></div><button className="btn" onClick={exportCsv}><Download/>Exporter CSV</button></div>
+    <div className="ccf-filterbar"><div className="search ccf-search"><Search/><input value={ccfQuery} onChange={e=>setCcfQuery(e.target.value)} placeholder="Rechercher un élève…"/></div><select value={ccfGroup} onChange={e=>setCcfGroup(e.target.value)}><option value="">Tous les groupes</option>{groups.map(g=><option value={g} key={g}>{g}</option>)}</select><select value={ccfExamFilter} onChange={e=>setCcfExamFilter(e.target.value)}><option value="">Toutes les épreuves</option>{tracked.map(e=><option value={e.code} key={e.code}>{e.code} — {e.label}</option>)}</select><select value={ccfStatusFilter} onChange={e=>setCcfStatusFilter(e.target.value)}><option value="all">Tous les dossiers</option><option value="ready">Prêts</option><option value="incomplete">À finaliser</option><option value="missing_doc">Pièce manquante</option><option value="correction">À corriger</option><option value="missing_note">Note non validée</option></select>{(ccfQuery||ccfGroup||ccfExamFilter||ccfStatusFilter!=='all')&&<button className="btn small" onClick={()=>{setCcfQuery('');setCcfGroup('');setCcfExamFilter('');setCcfStatusFilter('all')}}>Réinitialiser</button>}<span className="ccf-filter-count">{filteredStudents.length} / {students.length} élève(s)</span></div>
+    {message&&<div className="form-message success">{message}</div>}
+    <div className="table-card ccf-table ccf-dossier-matrix"><table><thead><tr><th>Élève</th>{visibleTracked.map(e=><th key={e.code}>{e.code}<div className="cell-sub">note • dossier</div></th>)}<th>État</th><th>Moy. validée</th></tr></thead><tbody>{filteredStudents.map(st=>{const avg=weightedAverage(st.id);const status=ccfStatus(st,ccfExamFilter);return <tr key={st.id}><td><strong>{st.last_name} {st.first_name}</strong><div className="cell-sub">{st.group_name||''}</div></td>{visibleTracked.map(e=>{const key=`${st.id}|${e.code}`;const r=resultMap[key];const p=examDocProgress(st.id,e.code);const proposed=proposedScore(r);const validated=validatedScore(r);const draftValue=drafts[key]??'';const sameValidated=draftValue!==''&&validated!=null&&Number(draftValue)===Number(validated);return <td key={e.code}><div className="ccf-matrix-cell">{readOnly?(validated!=null?<span className="badge success">Validée {Number(validated).toFixed(1)}/20</span>:proposed!=null?<span className="badge warning">Proposée {Number(proposed).toFixed(1)}/20</span>:<span className="badge muted">Note —</span>):<><input className="score-input" type="number" min="0" max="20" step="0.25" value={draftValue} placeholder="—" onChange={ev=>setDrafts({...drafts,[key]:ev.target.value})} onBlur={()=>saveScore(st,e)}/>{draftValue!==''&&(sameValidated?<span className="badge success"><CheckCircle2/> Validée</span>:<button className="btn tiny ccf-validate-score" type="button" onMouseDown={ev=>ev.preventDefault()} onClick={()=>validateScore(st,e)}><CheckCircle2/> {validated!=null?'Revalider':'Valider'}</button>)}</>}<span className={`badge ${p.required===0?'muted':p.present===p.required?'success':p.present>0?'warning':'danger'}`}>{p.required===0?'Pas de pièce requise':`${p.present}/${p.required} pièce(s)`}</span>{p.required>0&&p.validated===p.required&&<small className="health-ok">Toutes validées</small>}</div></td>})}<td><div className="ccf-readiness-cell"><span className={`badge ${status.ready?'success':'warning'}`}>{status.ready?'Prêt':'À finaliser'}</span>{status.missingDocs>0&&<small>{status.missingDocs} pièce(s) manquante(s)</small>}{status.corrections>0&&<small>{status.corrections} à corriger</small>}{status.scoreMissing>0&&<small>{status.scoreMissing} note(s) non validée(s)</small>}{status.unvalidatedDocs>0&&status.missingDocs===0&&<small>{status.unvalidatedDocs} pièce(s) à valider</small>}</div></td><td><strong>{avg==null?'—':`${avg.toFixed(1)}/20`}</strong></td></tr>})}</tbody></table>{filteredStudents.length===0&&<div className="small-empty">Aucun élève ne correspond aux filtres sélectionnés.</div>}</div>
+  </div>
+}
+
+function ClassSettingsTab({klass,onArchived,onClassUpdated}) {
+  const [settings,setSettings]=useState(null)
+  const [invite,setInvite]=useState({email:'',member_role:'editor'})
+  const [message,setMessage]=useState('')
+  const [invites,setInvites]=useState([])
+  const [members,setMembers]=useState([])
+  const [restoreBusy,setRestoreBusy]=useState(false)
+  const [duplicate,setDuplicate]=useState({name:`${klass.name} - copie`,school_year:klass.school_year})
+  const [duplicateBusy,setDuplicateBusy]=useState(false)
+  const [identity,setIdentity]=useState({name:klass.pp_establishments?.name||'',city:klass.pp_establishments?.city||'',logo_path:klass.pp_establishments?.logo_path||null})
+  const [identityBusy,setIdentityBusy]=useState(false)
+  const [currentUid,setCurrentUid]=useState('')
+  const [organizationMode,setOrganizationMode]=useState(klass.organization_mode||'solo')
+  const [modules,setModules]=useState(klass.enabled_modules||{ccf:true,pfmp:true,reports:true,students:true,synthesis:true,evaluations:true,progression:true,student_portal:true})
+  async function load(){
+    const {data:{user}}=await supabase.auth.getUser();setCurrentUid(user?.id||'')
+    const [s,i,m]=await Promise.all([
+      supabase.from('pp_class_settings').select('*').eq('class_id',klass.id).maybeSingle(),
+      supabase.from('pp_class_invites').select('*').eq('class_id',klass.id).order('created_at',{ascending:false}),
+      supabase.from('pp_class_members').select('class_id,user_id,member_role,pp_profiles(display_name,email)').eq('class_id',klass.id).order('created_at')
+    ])
+    setSettings(s.data);setInvites(i.data||[]);setMembers(m.data||[])
+  }
+  useEffect(()=>{load();setIdentity({name:klass.pp_establishments?.name||'',city:klass.pp_establishments?.city||'',logo_path:klass.pp_establishments?.logo_path||null});setOrganizationMode(klass.organization_mode||'solo')},[klass.id])
+  async function uploadEstablishmentLogo(file){
+    if(!file||!klass.establishment_id)return
+    setIdentityBusy(true);setMessage('Import du logo…')
+    try{
+      const {data:{user}}=await supabase.auth.getUser()
+      const path=`${user.id}/${Date.now()}-${safeFileName(file.name)}`
+      const {error:uploadError}=await supabase.storage.from('pp-establishment-logos').upload(path,file,{upsert:false})
+      if(uploadError)throw uploadError
+      const oldPath=identity.logo_path
+      const {error:updateError}=await supabase.from('pp_establishments').update({logo_path:path}).eq('id',klass.establishment_id)
+      if(updateError){await supabase.storage.from('pp-establishment-logos').remove([path]);throw updateError}
+      if(oldPath&&oldPath!==path)await supabase.storage.from('pp-establishment-logos').remove([oldPath])
+      setIdentity({...identity,logo_path:path});setMessage('Logo établissement mis à jour.')
+      await onClassUpdated?.()
+    }catch(e){setMessage(toastError(e))}finally{setIdentityBusy(false)}
+  }
+  async function saveEstablishmentIdentity(){
+    if(!klass.establishment_id){setMessage('Aucun établissement lié à cette classe.');return}
+    if(!identity.name.trim()||!identity.city.trim()){setMessage('Le nom et la ville de l’établissement sont requis.');return}
+    const {error}=await supabase.from('pp_establishments').update({name:identity.name.trim(),city:identity.city.trim()}).eq('id',klass.establishment_id)
+    setMessage(error?toastError(error):'Identité de l’établissement enregistrée.')
+    if(!error)await onClassUpdated?.()
+  }
+  async function saveOrganizationMode(){
+    const {error}=await supabase.from('pp_classes').update({organization_mode:organizationMode,updated_at:new Date().toISOString()}).eq('id',klass.id)
+    setMessage(error?toastError(error):`Organisation enregistrée : ${organizationMode==='solo'?'seul':organizationMode==='binome'?'binôme':'trinôme'}.`)
+    if(!error)await onClassUpdated?.()
+  }
+  async function saveSettings(){
+    const values=['N','D','A','E'].map(k=>Number(settings.note_mapping[k]))
+    if(values.some(v=>Number.isNaN(v)||v<0||v>20)){setMessage('Chaque équivalence doit être comprise entre 0 et 20.');return}
+    if(!(values[0]<=values[1]&&values[1]<=values[2]&&values[2]<=values[3])){setMessage('Pour rester cohérent, utilisez une progression croissante : N ≤ D ≤ A ≤ E.');return}
+    const payload={note_enabled:settings.note_enabled,note_mapping:settings.note_mapping,synthesis_mode:settings.synthesis_mode,default_student_visibility:settings.default_student_visibility,display_level_labels:settings.display_level_labels,quick_eval_defaults:settings.quick_eval_defaults,dashboard_preferences:settings.dashboard_preferences,export_preferences:settings.export_preferences,updated_at:new Date().toISOString()}
+    const [a,b]=await Promise.all([supabase.from('pp_class_settings').update(payload).eq('class_id',klass.id),supabase.from('pp_classes').update({enabled_modules:modules,updated_at:new Date().toISOString()}).eq('id',klass.id)])
+    setMessage(a.error?toastError(a.error):b.error?toastError(b.error):'Réglages enregistrés.')
+  }
+  async function applyVisibilityDefaults(){
+    if(!confirm('Appliquer ces règles de visibilité à tous les élèves déjà présents dans la classe ?'))return
+    const {data,error}=await supabase.rpc('pp_apply_class_visibility_defaults',{target_class_id:klass.id,apply_to_existing_students:true})
+    setMessage(error?toastError(error):`Visibilité appliquée à ${data||0} élève(s).`)
+  }
+  function setVisibility(key,value){
+    const next={...(settings.default_student_visibility||{}),[key]:value}
+    if(key==='teacher_comments'&&value) next.teacher_positions=true
+    if(key==='teacher_positions'&&!value) next.teacher_comments=false
+    setSettings({...settings,default_student_visibility:next})
+  }
+  function setLevelLabel(key,value){setSettings({...settings,display_level_labels:{...(settings.display_level_labels||{}),[key]:value}})}
+  function setQuick(key,value){setSettings({...settings,quick_eval_defaults:{...(settings.quick_eval_defaults||{}),[key]:value}})}
+  function setDash(key,value){setSettings({...settings,dashboard_preferences:{...(settings.dashboard_preferences||{}),[key]:value}})}
+  function setExportPref(key,value){setSettings({...settings,export_preferences:{...(settings.export_preferences||{}),[key]:value}})}
+  async function sendInvite(e){
+    e.preventDefault()
+    const {data:{user}}=await supabase.auth.getUser()
+    const {error}=await supabase.from('pp_class_invites').insert({...invite,class_id:klass.id,invited_by:user.id})
+    setMessage(error?toastError(error):'Invitation enregistrée. Le collègue sera rattaché lors de sa prochaine connexion.')
+    if(!error){setInvite({...invite,email:''});load()}
+  }
+  async function changeMemberRole(member,role){
+    if(member.user_id===klass.owner_id)return
+    const {error}=await supabase.from('pp_class_members').update({member_role:role}).eq('class_id',klass.id).eq('user_id',member.user_id)
+    setMessage(error?toastError(error):'Droit du collègue mis à jour.');if(!error)load()
+  }
+  async function removeMember(member){
+    if(member.user_id===klass.owner_id)return
+    if(!confirm(`Retirer ${member.pp_profiles?.display_name||member.pp_profiles?.email||'ce collègue'} de la classe ?`))return
+    const {error}=await supabase.from('pp_class_members').delete().eq('class_id',klass.id).eq('user_id',member.user_id)
+    setMessage(error?toastError(error):'Collègue retiré de la classe.');if(!error)load()
+  }
+  async function revokeInvite(item){
+    const {error}=await supabase.from('pp_class_invites').update({status:'revoked'}).eq('id',item.id)
+    setMessage(error?toastError(error):'Invitation révoquée.');if(!error)load()
+  }
+  async function toggleArchive(){
+    const archive=(klass.status||'active')!=='archived'
+    if(archive&&!confirm(`Archiver ${klass.name} ? Les données seront conservées et la classe restera consultable dans les archives.`))return
+    const {error}=await supabase.from('pp_classes').update({status:archive?'archived':'active',archived_at:archive?new Date().toISOString():null}).eq('id',klass.id)
+    if(error){setMessage(toastError(error));return}
+    setMessage(archive?'Classe archivée.':'Classe réactivée.')
+    if(onArchived)setTimeout(onArchived,500)
+  }
+  async function deleteClass(){
+    if(currentUid!==klass.owner_id){setMessage('Seul le propriétaire principal peut supprimer définitivement cette classe.');return}
+    const expected=String(klass.name||'').trim()
+    const typed=window.prompt(`Suppression définitive de ${expected}. Cette action supprimera la classe et ses données associées. Pour confirmer, saisissez exactement le nom de la classe :`)
+    if(typed===null)return
+    if(typed.trim()!==expected){setMessage('Suppression annulée : le nom saisi ne correspond pas à la classe.');return}
+    if(!confirm(`Confirmer la suppression définitive de ${expected} ? Cette action est irréversible.`))return
+    setMessage('Suppression de la classe…')
+    const {error}=await supabase.from('pp_classes').delete().eq('id',klass.id).eq('owner_id',currentUid)
+    if(error){setMessage(toastError(error));return}
+    if(onArchived)onArchived()
+  }
+  async function duplicateClass(e){
+    e.preventDefault()
+    if(!duplicate.name.trim()||!duplicate.school_year.trim()){setMessage('Indiquez un nom et une année scolaire.');return}
+    setDuplicateBusy(true);setMessage('Duplication de la classe…')
+    const {data,error}=await supabase.rpc('pp_duplicate_class',{source_class_id:klass.id,new_name:duplicate.name.trim(),new_school_year:duplicate.school_year.trim()})
+    setDuplicateBusy(false)
+    setMessage(error?toastError(error):`Classe dupliquée avec sa progression et ses réglages. Nouvelle classe : ${duplicate.name}. Les élèves ne sont pas copiés.`)
+  }
+  async function exportBackup(){
+    setMessage('Préparation de la sauvegarde…')
+    const [students,progression,pfmpPeriods,classPeriods,classMembers,classInvites]=await Promise.all([
+      supabase.from('pp_students').select('*').eq('class_id',klass.id),
+      supabase.from('pp_progression_items').select('*').eq('class_id',klass.id),
+      supabase.from('pp_pfmp_periods').select('*').eq('class_id',klass.id),
+      supabase.from('pp_class_periods').select('*').eq('class_id',klass.id).order('sort_order'),
+      supabase.from('pp_class_members').select('*').eq('class_id',klass.id),
+      supabase.from('pp_class_invites').select('*').eq('class_id',klass.id)
+    ])
+    const progressionIds=(progression.data||[]).map(x=>x.id)
+    let progressionAttachments={data:[]}
+    if(progressionIds.length) progressionAttachments=await supabase.from('pp_progression_attachments').select('*').in('progression_item_id',progressionIds)
+    const ids=(students.data||[]).map(x=>x.id)
+    let evaluations={data:[]},selfEvaluations={data:[]},debriefs={data:[]},positions={data:[]},documents={data:[]},examResults={data:[]}
+    if(ids.length){[evaluations,selfEvaluations,debriefs,positions,documents,examResults]=await Promise.all([
+      supabase.from('pp_teacher_evaluations').select('*').in('student_id',ids),
+      supabase.from('pp_self_evaluations').select('*').in('student_id',ids),
+      supabase.from('pp_pfmp_debriefs').select('*').in('student_id',ids),
+      supabase.from('pp_final_positions').select('*').in('student_id',ids),
+      supabase.from('pp_documents').select('*').in('student_id',ids),
+      supabase.from('pp_exam_results').select('*').in('student_id',ids)
+    ])}
+    const backup={exported_at:new Date().toISOString(),backup_version:2,class:klass,settings,students:students.data||[],progression:progression.data||[],progression_attachments:progressionAttachments.data||[],class_periods:classPeriods.data||[],pfmp_periods:pfmpPeriods.data||[],class_members:classMembers.data||[],class_invites:classInvites.data||[],teacher_evaluations:evaluations.data||[],self_evaluations:selfEvaluations.data||[],pfmp_debriefs:debriefs.data||[],final_positions:positions.data||[],documents:documents.data||[],exam_results:examResults.data||[]}
+    downloadTextFile(JSON.stringify(backup,null,2),`ProPilot_${klass.name.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.json`,'application/json')
+    setMessage('Sauvegarde JSON téléchargée.')
+  }
+  async function exportStudentsCsv(){
+    const {data=[]}=await supabase.from('pp_students').select('last_name,first_name,group_name,email,access_enabled').eq('class_id',klass.id).order('last_name')
+    const esc=v=>`"${String(v??'').replaceAll('"','""')}"`
+    const rows=[['Nom','Prénom','Groupe','Email','Accès élève'],...data.map(st=>[st.last_name,st.first_name,st.group_name,st.email,st.access_enabled?'oui':'non'])]
+    downloadTextFile('\uFEFF'+rows.map(r=>r.map(esc).join(';')).join('\n'),`Eleves_${klass.name.replace(/\s+/g,'_')}.csv`,'text/csv;charset=utf-8')
+  }
+  async function restoreBackup(file){
+    setRestoreBusy(true);setMessage('Lecture de la sauvegarde…')
+    try{
+      const backup=JSON.parse(await file.text())
+      if(backup?.class?.id!==klass.id) throw new Error('Cette sauvegarde ne correspond pas à cette classe. La restauration est limitée à la même classe pour éviter les mélanges de données.')
+      const date=backup.exported_at?new Date(backup.exported_at).toLocaleString('fr-FR'):'date inconnue'
+      if(!confirm(`Restaurer la sauvegarde de ${klass.name} (${date}) ? Les enregistrements portant les mêmes identifiants seront mis à jour.`)){setMessage('Restauration annulée.');return}
+      const {data:{user}}=await supabase.auth.getUser()
+      const errors=[]
+      async function run(label,promise){const {error}=await promise;if(error)errors.push(`${label}: ${toastError(error)}`)}
+      if(backup.settings) await run('Réglages',supabase.from('pp_class_settings').update({
+        note_enabled:backup.settings.note_enabled,
+        note_mapping:backup.settings.note_mapping,
+        synthesis_mode:backup.settings.synthesis_mode,
+        default_student_visibility:backup.settings.default_student_visibility,
+        display_level_labels:backup.settings.display_level_labels,
+        quick_eval_defaults:backup.settings.quick_eval_defaults,
+        dashboard_preferences:backup.settings.dashboard_preferences,
+        export_preferences:backup.settings.export_preferences,
+        updated_at:new Date().toISOString()
+      }).eq('class_id',klass.id))
+      if(backup.class?.enabled_modules) await run('Modules',supabase.from('pp_classes').update({enabled_modules:backup.class.enabled_modules,updated_at:new Date().toISOString()}).eq('id',klass.id))
+      if(backup.class_periods?.length){
+        const rows=backup.class_periods.map(x=>({id:x.id,class_id:klass.id,code:x.code,label:x.label,subtitle:x.subtitle||null,sort_order:x.sort_order}))
+        await run('Périodes pédagogiques',supabase.from('pp_class_periods').upsert(rows,{onConflict:'class_id,code'}))
+      }
+      if(backup.students?.length){
+        const rows=backup.students.map(x=>({id:x.id,class_id:klass.id,last_name:x.last_name,first_name:x.first_name,group_name:x.group_name||null,email:x.email||null,access_enabled:!!x.access_enabled,visibility:x.visibility||undefined,created_at:x.created_at}))
+        await run('Élèves',supabase.from('pp_students').upsert(rows,{onConflict:'id'}))
+      }
+      if(backup.progression?.length){
+        const rows=backup.progression.map(x=>({
+          id:x.id,class_id:klass.id,item_kind:x.item_kind||'context',period_id:x.period_id,context_name:x.context_name,
+          learning_level:x.learning_level||'D',duration_hours:x.duration_hours,notes:x.notes,competencies:x.competencies||[],econ_law_links:x.econ_law_links||[],
+          problematic:x.problematic||null,teacher_label:x.teacher_label||null,group_code:x.group_code||null,status:x.status||'Prévu',
+          behaviours:x.behaviours||[],knowledge:x.knowledge||[],expected_results:x.expected_results||[],activities:x.activities||null,
+          cycle_level:x.cycle_level||null,activity_type:x.activity_type||null,custom_activity_type:x.custom_activity_type||null,sort_order:x.sort_order||0,
+          created_by:user.id,created_at:x.created_at,updated_at:new Date().toISOString()
+        }))
+        await run('Progression',supabase.from('pp_progression_items').upsert(rows,{onConflict:'id'}))
+      }
+      if(backup.pfmp_periods?.length){
+        const rows=backup.pfmp_periods.map(x=>({id:x.id,class_id:klass.id,label:x.label,start_date:x.start_date,end_date:x.end_date,sort_order:x.sort_order}))
+        await run('Périodes PFMP',supabase.from('pp_pfmp_periods').upsert(rows,{onConflict:'id'}))
+      }
+      if(backup.teacher_evaluations?.length){const rows=backup.teacher_evaluations.map(x=>({...x,assessed_by:user.id}));await run('Évaluations enseignant',supabase.from('pp_teacher_evaluations').upsert(rows,{onConflict:'id'}))}
+      if(backup.pfmp_debriefs?.length){const rows=backup.pfmp_debriefs.map(x=>({...x,teacher_id:user.id}));await run('Débriefs PFMP',supabase.from('pp_pfmp_debriefs').upsert(rows,{onConflict:'id'}))}
+      if(backup.final_positions?.length){const rows=backup.final_positions.map(x=>({...x,updated_by:user.id,updated_at:new Date().toISOString()}));await run('Positionnements finaux',supabase.from('pp_final_positions').upsert(rows,{onConflict:'student_id,competency_code'}))}
+      if(backup.exam_results?.length){const rows=backup.exam_results.map(x=>({...x,assessed_by:user.id,updated_at:new Date().toISOString()}));await run('Résultats CCF',supabase.from('pp_exam_results').upsert(rows,{onConflict:'student_id,exam_code'}))}
+      await load()
+      setMessage(errors.length?`Restauration partielle : ${errors.join(' | ')}`:'Restauration terminée. Les fichiers physiques (documents et pièces jointes) et autoévaluations élève ne sont pas recréés automatiquement.')
+    }catch(err){setMessage(toastError(err))}finally{setRestoreBusy(false)}
+  }
+  if(!settings)return <div className="small-empty">Chargement…</div>
+  return <div className="settings-grid">
+    {currentUid===klass.owner_id?<div className="panel"><div className="panel-head"><div><h3>Établissement</h3><p>Le logo académique reste affiché ; ajoutez ou remplacez le logo et l’identité de votre établissement.</p></div></div><div className="stack"><label>Nom de l’établissement<input value={identity.name} onChange={e=>setIdentity({...identity,name:e.target.value})}/></label><label>Ville<input value={identity.city} onChange={e=>setIdentity({...identity,city:e.target.value})}/></label><label className="file-drop compact-logo-drop"><Upload/><span>{identity.logo_path?'Remplacer le logo établissement':'Importer le logo établissement'}</span><input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" disabled={identityBusy} onChange={e=>e.target.files?.[0]&&uploadEstablishmentLogo(e.target.files[0])}/><small>PNG, JPG, WEBP ou SVG • 5 Mo max.</small></label><button className="btn primary" onClick={saveEstablishmentIdentity}><Save/>Enregistrer l’établissement</button></div></div>:<div className="panel"><div className="panel-head"><div><h3>Établissement</h3><p>L’identité de l’établissement est gérée par le propriétaire principal de la classe.</p></div></div><InstitutionalIdentity establishment={klass.pp_establishments}/></div>}
+    <div className="panel"><div className="panel-head"><div><h3>Gestion de la classe</h3><p>Préparer l’année suivante ou archiver sans supprimer les données.</p></div></div><form className="stack" onSubmit={duplicateClass}><label>Nom de la copie<input value={duplicate.name} onChange={e=>setDuplicate({...duplicate,name:e.target.value})}/></label><label>Année scolaire<input value={duplicate.school_year} onChange={e=>setDuplicate({...duplicate,school_year:e.target.value})} placeholder="2027-2028"/></label><button className="btn" disabled={duplicateBusy}><Copy/>{duplicateBusy?'Duplication…':'Dupliquer la classe'}</button><small className="muted">La progression, les réglages et les modules sont copiés. Les élèves, évaluations, PFMP, CCF et documents restent dans la classe d’origine.</small></form><div className="team-mode-settings"><strong>Organisation de l’équipe</strong><p className="muted">Le mode limite le nombre de collègues : seul = 0, binôme = 1, trinôme = 2 en plus du propriétaire principal.</p><div className="row wrap"><select value={organizationMode} onChange={e=>setOrganizationMode(e.target.value)}><option value="solo">Seul</option><option value="binome">Binôme</option><option value="trinome">Trinôme</option></select><button type="button" className="btn" onClick={saveOrganizationMode}><Save/>Enregistrer l’organisation</button></div></div><div className="danger-zone"><strong>{klass.status==='archived'?'Classe archivée':'Archivage'}</strong><p>{klass.status==='archived'?'Réactivez cette classe pour la remettre dans les classes actives.':'Archivez une classe terminée pour conserver ses données.'}</p><button className={`btn ${klass.status==='archived'?'':'danger'}`} onClick={toggleArchive}><Archive/>{klass.status==='archived'?'Réactiver la classe':'Archiver la classe'}</button>{currentUid===klass.owner_id&&<><hr/><strong>Suppression définitive</strong><p>Réservée au propriétaire principal. La classe et ses données associées seront supprimées définitivement.</p><button className="btn danger" onClick={deleteClass}><Trash2/>Supprimer définitivement la classe</button></>}</div></div>
+    <div className="panel"><div className="panel-head"><div><h3>Calcul indicatif de la note</h3><p>Le résultat reste une aide au positionnement, jamais une validation automatique.</p></div></div><label className="check"><input type="checkbox" checked={settings.note_enabled} onChange={e=>setSettings({...settings,note_enabled:e.target.checked})}/>Afficher une note indicative</label><label>Mode de synthèse<select value={settings.synthesis_mode} onChange={e=>setSettings({...settings,synthesis_mode:e.target.value})}><option value="latest_per_competency">Dernière évaluation par compétence</option><option value="all_evaluations">Toutes les évaluations</option></select></label><div className="mapping-grid">{['N','D','A','E'].map(k=><label key={k}>{k}<input type="number" min="0" max="20" step="0.5" value={settings.note_mapping[k]} onChange={e=>setSettings({...settings,note_mapping:{...settings.note_mapping,[k]:Number(e.target.value)}})}/></label>)}</div><button className="btn primary" onClick={saveSettings}><Save/>Enregistrer</button></div>
+    <div className="panel"><div className="panel-head"><div><h3>Modules de la classe</h3><p>Chaque classe peut utiliser une configuration différente.</p></div></div><div className="settings-toggle-grid">{[['progression','Progression'],['students','Élèves'],['evaluations','Évaluations'],['synthesis','Synthèse'],['pfmp','PFMP'],['ccf','CCF'],['reports','Documents'],['student_portal','Espace élève']].map(([k,l])=><label className="check setting-check" key={k}><input type="checkbox" checked={modules?.[k]??true} onChange={e=>setModules({...modules,[k]:e.target.checked})}/>{l}</label>)}</div><button className="btn primary" onClick={saveSettings}><Save/>Enregistrer les modules</button></div>
+    <div className="panel"><div className="panel-head"><div><h3>Visibilité par défaut de l’espace élève</h3><p>Ces choix s’appliquent aux nouveaux élèves de cette classe.</p></div></div><div className="settings-toggle-grid">{[['progression','Progression'],['self_assessment','Autoévaluation'],['ccf','CCF'],['pfmp','PFMP'],['reports','Documents / rapports'],['synthesis','Synthèse'],['teacher_positions','Positionnements professeur'],['teacher_comments','Commentaires professeur']].map(([k,l])=><label className="check setting-check" key={k}><input type="checkbox" checked={!!settings.default_student_visibility?.[k]} onChange={e=>setVisibility(k,e.target.checked)}/>{l}</label>)}</div><div className="row wrap"><button className="btn primary" onClick={saveSettings}><Save/>Enregistrer</button><button className="btn" onClick={applyVisibilityDefaults}>Appliquer aux élèves existants</button></div></div>
+    <div className="panel"><div className="panel-head"><div><h3>Libellés et évaluation rapide</h3><p>Adaptez l’affichage à votre façon de travailler sans modifier le référentiel.</p></div></div><div className="level-label-grid">{['NE','N','D','A','E'].map(k=><label key={k}>{k}<input value={settings.display_level_labels?.[k]||''} onChange={e=>setLevelLabel(k,e.target.value)}/></label>)}</div><div className="stack compact-stack"><label className="check"><input type="checkbox" checked={settings.quick_eval_defaults?.show_observation??true} onChange={e=>setQuick('show_observation',e.target.checked)}/>Afficher la zone d’observation</label><label className="check"><input type="checkbox" checked={settings.quick_eval_defaults?.remember_last_competency??true} onChange={e=>setQuick('remember_last_competency',e.target.checked)}/>Mémoriser la dernière compétence</label><label className="check"><input type="checkbox" checked={settings.quick_eval_defaults?.remember_last_context??true} onChange={e=>setQuick('remember_last_context',e.target.checked)}/>Mémoriser le dernier contexte</label><label className="check"><input type="checkbox" checked={settings.quick_eval_defaults?.auto_advance??true} onChange={e=>setQuick('auto_advance',e.target.checked)}/>Après une saisie individuelle, passer automatiquement à l’élève suivant</label></div><button className="btn primary" onClick={saveSettings}><Save/>Enregistrer</button></div>
+    <div className="panel"><div className="panel-head"><div><h3>Tableau de bord et exports</h3><p>Choisissez les indicateurs et le format des exports.</p></div></div><div className="settings-toggle-grid">{[['show_alerts','Alertes'],['show_class_average','Moyenne de classe'],['show_competency_coverage','Couverture des compétences'],['show_pfmp_progress','Avancement PFMP'],['show_ccf_progress','Avancement CCF']].map(([k,l])=><label className="check setting-check" key={k}><input type="checkbox" checked={settings.dashboard_preferences?.[k]??true} onChange={e=>setDash(k,e.target.checked)}/>{l}</label>)}</div><label>Séparateur CSV<select value={settings.export_preferences?.csv_separator||';'} onChange={e=>setExportPref('csv_separator',e.target.value)}><option value=";">Point-virgule ;</option><option value=",">Virgule ,</option></select></label><label className="check"><input type="checkbox" checked={settings.export_preferences?.include_group??true} onChange={e=>setExportPref('include_group',e.target.checked)}/>Inclure le groupe</label><label className="check"><input type="checkbox" checked={settings.export_preferences?.include_comments??false} onChange={e=>setExportPref('include_comments',e.target.checked)}/>Inclure les commentaires</label><button className="btn primary" onClick={saveSettings}><Save/>Enregistrer</button></div>
+    <div className="panel"><div className="panel-head"><div><h3>Sauvegarde et exports</h3><p>Gardez une copie locale avant toute grosse modification.</p></div></div><div className="stack"><button className="btn" onClick={exportBackup}><Download/>Sauvegarde complète JSON</button><button className="btn" onClick={exportStudentsCsv}><Download/>Liste élèves CSV</button><label className="btn file-btn"><Upload/>{restoreBusy?'Restauration…':'Restaurer une sauvegarde JSON'}<input type="file" hidden accept="application/json,.json" disabled={restoreBusy} onChange={e=>e.target.files?.[0]&&restoreBackup(e.target.files[0])}/></label><small className="muted">Restauration uniquement dans la même classe. Les fichiers physiques déposés (documents et pièces jointes) et autoévaluations élève ne sont pas recréés ; leurs métadonnées restent présentes dans la sauvegarde.</small></div></div>
+    <div className="panel"><div className="panel-head"><div><h3>Collaboration</h3><p>Inviter et gérer les collègues de cette classe. Chaque collègue doit accepter son invitation. Capacité actuelle : {klass.organization_mode==='solo'?'aucun collègue':klass.organization_mode==='binome'?'1 collègue':'2 collègues'} en plus du propriétaire principal.</p></div></div><form onSubmit={sendInvite} className="stack"><label>E-mail du collègue<input type="email" value={invite.email} onChange={e=>setInvite({...invite,email:e.target.value})} required/></label><label>Droit<select value={invite.member_role} onChange={e=>setInvite({...invite,member_role:e.target.value})}><option value="owner">Propriétaire / co-responsable</option><option value="editor">Éditeur</option><option value="viewer">Lecture seule</option></select></label><button className="btn primary"><UserPlus/>Inviter</button></form><div className="member-list"><strong className="field-title">Membres actuels</strong>{members.map(m=>{const principal=m.user_id===klass.owner_id;return <div className="member-row" key={m.user_id}><div><strong>{m.pp_profiles?.display_name||m.pp_profiles?.email||m.user_id}</strong><span>{m.pp_profiles?.email||''}</span></div>{principal?<span className="badge info">Propriétaire principal</span>:<div className="row"><select value={m.member_role} onChange={e=>changeMemberRole(m,e.target.value)}><option value="owner">Propriétaire / co-responsable</option><option value="editor">Éditeur</option><option value="viewer">Lecture seule</option></select><button className="icon-btn danger-text" onClick={()=>removeMember(m)} title="Retirer"><Trash2/></button></div>}</div>})}</div><div className="invite-list"><strong className="field-title">Invitations</strong>{invites.map(i=><div key={i.id}><span>{i.email}</span><div className="row"><StatusBadge ok={i.status==='accepted'}>{i.status}</StatusBadge>{i.status==='pending'&&<button className="icon-btn danger-text" onClick={()=>revokeInvite(i)} title="Révoquer"><X/></button>}</div></div>)}</div></div>
+    {message&&<div className="form-message full-span">{message}</div>}
+  </div>
+}
+
+function FeedbackPanel({classes=[]}) {
+  const [form,setForm]=useState({category:'bug',title:'',description:'',class_id:''})
+  const [items,setItems]=useState([])
+  const [message,setMessage]=useState('')
+  async function load(){const {data}=await supabase.from('pp_feedback').select('*').order('created_at',{ascending:false});setItems(data||[])}
+  useEffect(()=>{load()},[])
+  async function submit(e){e.preventDefault();const {data:{user}}=await supabase.auth.getUser();const {error}=await supabase.from('pp_feedback').insert({submitted_by:user.id,category:form.category,title:form.title,description:form.description,class_id:form.class_id||null,status:'nouveau'});setMessage(error?toastError(error):'Merci, votre retour a été envoyé à l’administrateur.');if(!error){setForm({category:'bug',title:'',description:'',class_id:''});load()}}
+  return <section className="content-section"><div className="section-head"><div><h1>Bugs / RETEX pilote</h1><p>Signalez un problème ou une amélioration pendant la phase de test.</p></div></div><div className="feedback-layout"><form className="panel stack" onSubmit={submit}><label>Type<select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}><option value="bug">Bug</option><option value="amelioration">Amélioration</option><option value="retour">Retour d’usage</option></select></label><label>Classe concernée<select value={form.class_id} onChange={e=>setForm({...form,class_id:e.target.value})}><option value="">Aucune / général</option>{classes.filter(c=>(c.status||'active')==='active').map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label>Titre<input value={form.title} onChange={e=>setForm({...form,title:e.target.value})} required/></label><label>Description<textarea rows="8" value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Décrivez ce que vous faisiez, ce qui s’est passé et ce que vous attendiez…" required/></label>{message&&<div className="form-message success">{message}</div>}<button className="btn primary"><Save/>Envoyer le retour</button></form><div className="panel"><h3>Mes retours</h3><div className="cards-list">{items.map(i=><div className="feedback-row" key={i.id}><div><span className="badge info">{i.category}</span><strong>{i.title}</strong><p>{i.description}</p><small>{new Date(i.created_at).toLocaleString('fr-FR')}</small></div><StatusBadge ok={i.status==='traite'}>{i.status}</StatusBadge></div>)}{!items.length&&<div className="small-empty">Aucun retour envoyé.</div>}</div></div></div></section>
+}
+
+function AdminPanel() {
+  const [profiles,setProfiles]=useState([])
+  const [feedback,setFeedback]=useState([])
+  const [pilot,setPilot]=useState(null)
+  const [pilotOverview,setPilotOverview]=useState(null)
+  const [classes,setClasses]=useState([])
+  const [establishments,setEstablishments]=useState([])
+  const [integrity,setIntegrity]=useState(null)
+  const [tab,setTab]=useState('teachers')
+  const [message,setMessage]=useState('')
+  const [teacherFilter,setTeacherFilter]=useState('all')
+  const [teacherSearch,setTeacherSearch]=useState('')
+  async function load(){
+    const [p,f,pi,po,c,e,h]=await Promise.all([
+      supabase.from('pp_profiles').select('*').order('created_at',{ascending:false}),
+      supabase.from('pp_feedback').select('*, pp_profiles(display_name,email)').order('created_at',{ascending:false}),
+      supabase.rpc('pp_pilot_status'),
+      supabase.rpc('pp_admin_pilot_overview'),
+      supabase.rpc('pp_admin_class_catalog'),
+      supabase.from('pp_establishments').select('id,name,city,created_by').order('name'),
+      supabase.rpc('pp_admin_integrity_status')
+    ])
+    setProfiles(p.data||[]);setFeedback(f.data||[]);setPilot(pi.data||null);setPilotOverview(po.data||null);setClasses(Array.isArray(c.data)?c.data:[]);setEstablishments(e.data||[]);setIntegrity(h.data||null)
+  }
+  useEffect(()=>{load()},[])
+  const [changingAccess,setChangingAccess]=useState('')
+  const [confirmAccess,setConfirmAccess]=useState(null)
+  async function changeAccess(p,status){
+    if(p.role==='admin'||changingAccess)return
+    const actions={approved:'approuver',suspended:'suspendre',rejected:'refuser'}
+    if(!actions[status])return
+    setConfirmAccess(null)
+    setMessage('');setChangingAccess(p.user_id)
+    try {
+      const {data,error}=await supabase.from('pp_profiles').update({access_status:status,approved:status==='approved'}).eq('user_id',p.user_id).eq('role','teacher').select('user_id,access_status,approved').single()
+      if(error)throw error
+      if(!data||data.access_status!==status)throw new Error('Modification non confirmée par le serveur.')
+      setMessage(status==='approved'?'Compte enseignant approuvé.':status==='suspended'?'Compte enseignant suspendu.':'Demande refusée : l’enseignant a été retiré de la liste.')
+      await load()
+    } catch(e){setMessage(toastError(e))}
+    finally{setChangingAccess('')}
+  }
+  async function setFeedbackStatus(item,status){const {error}=await supabase.from('pp_feedback').update({status,updated_at:new Date().toISOString()}).eq('id',item.id);setMessage(error?toastError(error):'RETEX mis à jour.');if(!error)load()}
+  const approved=profiles.filter(p=>p.approved&&p.role==='teacher').length
+  const pending=profiles.filter(p=>p.role==='teacher'&&(!p.access_status||p.access_status==='pending')).length
+  const capacity=pilotOverview?.pilot_capacity??pilot?.max_approved_teachers??10
+  const normalizedSearch=teacherSearch.trim().toLowerCase()
+  const visibleProfiles=profiles
+    .filter(p=>p.role==='admin'||p.access_status!=='rejected')
+    .filter(p=>teacherFilter==='all'||(teacherFilter==='pending'&&p.role==='teacher'&&(p.access_status||(!p.approved?'pending':'approved'))==='pending')||(teacherFilter==='approved'&&p.role==='teacher'&&p.approved)||(teacherFilter==='suspended'&&p.role==='teacher'&&p.access_status==='suspended')||(teacherFilter==='rejected'&&p.role==='teacher'&&p.access_status==='rejected')||(teacherFilter==='admin'&&p.role==='admin'))
+    .filter(p=>!normalizedSearch||String(p.display_name||'').toLowerCase().includes(normalizedSearch)||String(p.email||'').toLowerCase().includes(normalizedSearch))
+    .sort((a,b)=>{
+      const rank=p=>p.role==='admin'?0:(!p.approved?1:2)
+      return rank(a)-rank(b)||String(a.display_name||a.email||'').localeCompare(String(b.display_name||b.email||''),'fr')
+    })
+  return <section className="content-section"><div className="section-head"><div><h1>Administration pilote</h1><p>Gestion technique des professeurs et de l’application, sans accès par défaut aux données nominatives des élèves.</p></div></div><div className="stats-grid"><Stat icon={<Users/>} value={`${pilotOverview?.approved_teachers??approved}/${capacity}`} label="Professeurs pilotes"/><Stat icon={<Clock3/>} value={pilotOverview?.pending_teachers??pending} label="En attente"/><Stat icon={<School/>} value={pilotOverview?.active_classes??classes.filter(c=>c.status==='active').length} label="Classes actives"/><Stat icon={<AlertCircle/>} value={pilotOverview?.open_feedback??feedback.filter(f=>f.status!=='traite').length} label="RETEX ouverts"/></div><div className="tabs scroll-tabs"><button className={tab==='teachers'?'active':''} onClick={()=>setTab('teachers')}><Users/>Professeurs</button><button className={tab==='retex'?'active':''} onClick={()=>setTab('retex')}><AlertCircle/>Bugs / RETEX</button><button className={tab==='platform'?'active':''} onClick={()=>setTab('platform')}><Settings/>Plateforme</button></div>{message&&<div className="form-message success">{message}</div>}{tab==='teachers'&&<div className="stack"><div className="panel"><div className="row wrap"><label className="grow">Rechercher<input value={teacherSearch} onChange={e=>setTeacherSearch(e.target.value)} placeholder="Nom ou adresse académique…"/></label><label>Afficher<select value={teacherFilter} onChange={e=>setTeacherFilter(e.target.value)}><option value="all">Tous les comptes</option><option value="pending">En attente</option><option value="approved">Professeurs approuvés</option><option value="suspended">Suspendus</option><option value="admin">Administrateurs</option></select></label></div><p className="muted">Pilote : {approved} professeur{approved>1?'s':''} approuvé{approved>1?'s':''} sur {capacity}. Les nouvelles inscriptions restent en attente tant que tu ne les approuves pas.</p></div><div className="table-card"><table><thead><tr><th>Enseignant</th><th>E-mail</th><th>Rôle</th><th>Statut</th><th></th></tr></thead><tbody>{visibleProfiles.map(p=><tr key={p.user_id}><td>{p.display_name||'—'}</td><td>{p.email}</td><td>{p.role}</td><td>{p.role==='admin'?'Administrateur':({approved:'Approuvé',pending:'En attente',suspended:'Suspendu',rejected:'Refusé'}[p.access_status]||'En attente')}</td><td>{p.role==='teacher'&&<div style={{display:'flex',flexDirection:'column',gap:6}}>
+<div className="row wrap" style={{gap:6}}>
+{p.access_status!=='approved'&&<button type="button" className="btn small primary" disabled={!!changingAccess||approved>=capacity} onClick={()=>setConfirmAccess({user_id:p.user_id,status:'approved'})}>Approuver</button>}
+{p.access_status==='approved'&&<button type="button" className="btn small" disabled={!!changingAccess} onClick={()=>setConfirmAccess({user_id:p.user_id,status:'suspended'})}>Suspendre</button>}
+{p.access_status!=='rejected'&&<button type="button" className="btn small danger-text" disabled={!!changingAccess} onClick={()=>setConfirmAccess({user_id:p.user_id,status:'rejected'})}>Refuser</button>}
+</div>
+{confirmAccess?.user_id===p.user_id&&<div className="row wrap" style={{gap:6,alignItems:'center'}}><span>Confirmer : {{approved:'approuver',suspended:'suspendre',rejected:'refuser'}[confirmAccess.status]} ?</span><button type="button" className="btn small primary" onClick={()=>changeAccess(p,confirmAccess.status)}>Confirmer</button><button type="button" className="btn small" onClick={()=>setConfirmAccess(null)}>Annuler</button></div>}
+</div>}</td></tr>)}{!visibleProfiles.length&&<tr><td colSpan="5"><div className="small-empty">Aucun compte correspondant.</div></td></tr>}</tbody></table></div></div>}{tab==='retex'&&<div className="cards-list">{feedback.map(i=><div className="feedback-row admin-feedback-row" key={i.id}><div><div className="row wrap"><span className="badge info">{i.category}</span><span className="badge muted">{i.status}</span></div><strong>{i.title}</strong><span>{i.pp_profiles?.display_name||i.pp_profiles?.email||'Professeur'}</span><p>{i.description}</p><small>{new Date(i.created_at).toLocaleString('fr-FR')}</small></div><div className="row wrap"><button className="btn small" onClick={()=>setFeedbackStatus(i,'en_cours')}>En cours</button><button className="btn small primary" onClick={()=>setFeedbackStatus(i,'traite')}>Traité</button></div></div>)}</div>}{tab==='platform'&&<div className="settings-grid"><div className="panel"><h3>Phase pilote</h3><div className="metric-line"><span>Mode pilote</span><b>{pilot?.pilot_mode?'Actif':'Inactif'}</b></div><div className="metric-line"><span>Domaine enseignant</span><b>{pilot?.allowed_teacher_domains?.join(', ')||'—'}</b></div><div className="metric-line"><span>Professeurs approuvés</span><b>{pilotOverview?.approved_teachers??pilot?.approved_teachers??approved}</b></div><div className="metric-line"><span>En attente</span><b>{pilotOverview?.pending_teachers??pilot?.pending_teachers??pending}</b></div><div className="metric-line"><span>Élèves (agrégé)</span><b>{pilotOverview?.students_total??0}</b></div><div className="metric-line"><span>Invitations en attente</span><b>{pilotOverview?.pending_invites??0}</b></div><div className="metric-line"><span>Organisation active</span><b>{pilotOverview?`${pilotOverview.organization_modes?.solo||0} seul • ${pilotOverview.organization_modes?.binome||0} binôme • ${pilotOverview.organization_modes?.trinome||0} trinôme`:'—'}</b></div><div className="metric-line"><span>Collaboration</span><b>{pilotOverview?`${pilotOverview.collaboration?.coowners||0} co-proprio • ${pilotOverview.collaboration?.editors||0} éditeur(s) • ${pilotOverview.collaboration?.viewers||0} lecteur(s)`:'—'}</b></div></div><div className="panel admin-health-panel"><div className="panel-head"><div><h3>Santé technique</h3><p>Contrôles globaux sans charger de données nominatives élèves.</p></div><span className={integrity?.ok?'badge success':'badge warning'}>{integrity?.ok?'✓ Cohérent':'À vérifier'}</span></div>{integrity&&<div className="admin-health-grid">{[['Réglages de classe manquants',integrity.missing_class_settings],['Périodes P1–P7 incomplètes',integrity.classes_missing_p1_p7],['Propriétaire absent des membres',integrity.missing_owner_membership],['Équipes au-delà de la capacité',integrity.teams_over_capacity],['Compétences progression invalides',integrity.invalid_progression_competencies],['Évaluations hors référentiel',integrity.invalid_teacher_evaluation_competencies],['Épreuves hors diplôme',integrity.invalid_exam_results],['Dates PFMP inversées',integrity.reversed_pfmp_dates],['Pièces attendues CCF invalides',integrity.invalid_ccf_requirements],['Documents CCF mal rattachés',integrity.invalid_ccf_document_links]].map(([label,value])=><div className="metric-line" key={label}><span>{label}</span><b className={Number(value)===0?'health-ok':'health-bad'}>{value??'—'}</b></div>)}</div>}</div><div className="panel"><h3>Établissements</h3>{establishments.map(e=><div className="document-row" key={e.id}><div className="doc-icon"><School/></div><div><strong>{e.name}</strong><span>{e.city||'Ville non renseignée'}</span></div></div>)}{!establishments.length&&<div className="small-empty">Aucun établissement créé.</div>}</div><div className="panel"><h3>Classes — métadonnées techniques</h3><p className="muted">Le compte administrateur ne reçoit pas l’accès pédagogique aux classes des collègues. Cette liste provient d’un catalogue technique limité : aucune donnée nominative élève n’est chargée.</p>{classes.slice(0,20).map(c=><div className="document-row" key={c.id}><div><strong>{c.name}</strong><span>{c.diploma_code} • {c.school_year} • {c.status} • {c.establishment_name||'Établissement non renseigné'}</span><small>{c.owner_display_name||c.owner_email||'Propriétaire non renseigné'}</small></div></div>)}{!classes.length&&<div className="small-empty">Aucune classe créée.</div>}</div></div>}</section>
+}
+
+
+function StudentPortal({ student, portalState, onSignOut }) {
+  const [liveStudent,setLiveStudent]=useState({...student,visibility:portalState?.visibility||student.visibility})
+  const klass=liveStudent.pp_classes
+  const [tab,setTab]=useState('home')
+  const [accessLost,setAccessLost]=useState(false)
+  const [dashboard,setDashboard]=useState({synthesis:null,positions:[]})
+  const [selfEvals,setSelfEvals]=useState([])
+  const [ccf,setCcf]=useState([])
+  const [progression,setProgression]=useState([])
+  const [pfmp,setPfmp]=useState([])
+  const [documents,setDocuments]=useState([])
+  const [ccfRequirements,setCcfRequirements]=useState([])
+
+  async function load(){
+    const {data:state,error:stateError}=await supabase.rpc('pp_get_my_student_portal_state')
+    if(stateError)return
+    if(!state?.linked||!state?.access_enabled){
+      setAccessLost(true)
+      return
+    }
+    setAccessLost(false)
+    setLiveStudent(prev=>({...prev,visibility:state.visibility||prev.visibility,first_name:state.first_name||prev.first_name,last_name:state.last_name||prev.last_name,group_name:state.group_name||prev.group_name}))
+    const [db,se,cc,pr,pf,do_,rq]=await Promise.all([
+      supabase.rpc('pp_get_my_student_dashboard'),
+      supabase.from('pp_self_evaluations').select('*').eq('student_id',student.id).order('assessed_at',{ascending:false}),
+      supabase.rpc('pp_get_my_ccf'),
+      supabase.rpc('pp_get_my_progression'),
+      supabase.rpc('pp_get_my_pfmp'),
+      supabase.rpc('pp_get_my_documents'),
+      supabase.from('pp_ccf_document_requirements').select('*').eq('class_id',state.class_id).eq('active',true).order('exam_code').order('sort_order')
+    ])
+    setDashboard(db.data||{synthesis:null,positions:[]})
+    setSelfEvals(se.data||[])
+    setCcf((cc.data||[]).filter(ex=>klass?.diploma_code!=='ACCUEIL'||['E31','E32'].includes(ex.exam_code)))
+    setProgression(pr.data||[])
+    setPfmp(pf.data||[])
+    setDocuments(do_.data||[])
+    setCcfRequirements(rq.data||[])
+  }
+
+  useEffect(()=>{
+    load()
+    const refresh=()=>{if(document.visibilityState!=='hidden')load()}
+    window.addEventListener('focus',refresh)
+    document.addEventListener('visibilitychange',refresh)
+    return ()=>{window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh)}
+  },[])
+
+  const synthesis=dashboard?.synthesis||{note:null,evaluated:0,dominant:'NE',group_averages:{},note_enabled:false}
+  const positions=dashboard?.positions||[]
+  const visibleTabs=[
+    ...((liveStudent.visibility?.synthesis||liveStudent.visibility?.teacher_positions)?[['home','Synthèse',BarChart3]]:[]),
+    ...(liveStudent.visibility?.self_assessment?[['self','Autoévaluation',Target]]:[]),
+    ...(liveStudent.visibility?.progression?[['progression','Progression',BookOpenCheck]]:[]),
+    ...(klass?.diploma_code!=='2MRC'&&liveStudent.visibility?.ccf?[['ccf','CCF',ListChecks]]:[]),
+    ...(liveStudent.visibility?.pfmp?[['pfmp','PFMP',BriefcaseBusiness]]:[]),
+    ...((liveStudent.visibility?.reports||liveStudent.visibility?.pfmp||documents.some(d=>d.document_scope!=='ccf'))?[['docs','Documents',FolderOpen]]:[]),
+  ]
+  useEffect(()=>{if(visibleTabs.length&&!visibleTabs.some(([k])=>k===tab))setTab(visibleTabs[0][0])},[liveStudent.visibility,documents.length,tab])
+
+  if(accessLost) return <StudentAccessSuspended state={{class_name:klass?.name}} onSignOut={onSignOut} onRefresh={load}/>
+
+  return <div className="student-portal">
+    <header className="student-top">
+      <div className="logo light"><GraduationCap/><div><strong>ProPilot</strong><span>Espace élève</span></div></div>
+      <div className="row"><div className="student-id"><strong>{liveStudent.first_name} {liveStudent.last_name}</strong><span>{klass.name}{liveStudent.group_name?` • ${liveStudent.group_name}`:''}</span></div><button className="btn ghost-light" onClick={onSignOut}><LogOut/>Déconnexion</button></div>
+    </header>
+    <main className="student-main">
+      <div className="student-welcome"><div><span className="class-pill">{klass.pp_diploma_packs?.short_name||klass.diploma_code}</span><h1>Mon suivi de formation</h1><p>Retrouvez ici uniquement les éléments rendus visibles par votre enseignant.</p></div></div>
+      {visibleTabs.length>0?<>
+        <div className="tabs scroll-tabs">{visibleTabs.map(([k,l,I])=><button key={k} className={tab===k?'active':''} onClick={()=>setTab(k)}><I size={17}/>{l}</button>)}</div>
+        {tab==='home'&&<StudentOwnSummary student={liveStudent} synthesis={synthesis} positions={positions} noteEnabled={synthesis.note_enabled}/>}
+        {tab==='self'&&<StudentSelfAssessment student={liveStudent} klass={klass} progression={progression} selfEvals={selfEvals} onRefresh={load}/>}
+        {tab==='progression'&&<StudentProgression items={progression}/>}
+        {tab==='ccf'&&klass?.diploma_code!=='2MRC'&&<StudentOwnCcf student={liveStudent} items={ccf} documents={documents} onRefresh={load}/>}
+        {tab==='pfmp'&&<StudentOwnPfmp debriefs={pfmp}/>}
+        {tab==='docs'&&<StudentOwnDocuments student={liveStudent} documents={documents} onRefresh={load}/>}
+      </>:<div className="empty-state compact"><EyeOff/><h3>Aucun module publié</h3><p>Votre enseignant n’a pas encore rendu de contenu visible dans votre espace.</p></div>}
+    </main>
+  </div>
+}
+
+
+function StudentOwnSummary({student,synthesis,positions,noteEnabled}) {
+  const canSeeSynthesis=student.visibility?.synthesis
+  const canSeePositions=student.visibility?.teacher_positions
+  const groups=Object.entries(synthesis.group_averages||{})
+  if(!canSeeSynthesis&&!canSeePositions)return <div className="empty-state compact"><EyeOff/><h3>Synthèse non publiée</h3><p>Votre enseignant n’a pas encore rendu ces informations visibles.</p></div>
+  return <div className="summary-layout">
+    {canSeeSynthesis&&<>
+      <div className="summary-cards">
+        <div className="summary-card accent"><span>Note indicative</span><strong>{!noteEnabled||synthesis.note==null?'—':`${Number(synthesis.note).toFixed(1)} / 20`}</strong><small>{noteEnabled?'Indication pédagogique':'Calcul désactivé'}</small></div>
+        <div className="summary-card"><span>Compétences positionnées</span><strong>{synthesis.evaluated}</strong><small>Niveau final validé par l’enseignant</small></div>
+        <div className="summary-card"><span>Niveau dominant</span><strong>{synthesis.dominant||'NE'}</strong><small>{LEVELS.find(l=>l.code===synthesis.dominant)?.label||'Non évalué'}</small></div>
+      </div>
+      {groups.length>0&&<div className="panel student-group-summary"><h3>Repères par groupe de compétences</h3><div className="student-group-grid">{groups.map(([g,v])=><div key={g}><span>{g}</span><strong>{noteEnabled&&v!=null?`${Number(v).toFixed(1)} / 20`:'—'}</strong><small>{GROUP_LABELS[g]||g}</small></div>)}</div></div>}
+    </>}
+    {canSeePositions&&<div className="panel"><h3>Mes positionnements</h3><div className="cards-list">{positions.filter(p=>p.validated_level).map(p=><div className="document-row student-position-row" key={p.id}><div><strong>{p.competency_code} — {p.competency_label}</strong><span>{GROUP_LABELS[p.competency_group]||p.competency_group}</span>{p.teacher_comment&&<p className="student-teacher-comment"><b>Commentaire de l’enseignant :</b> {p.teacher_comment}</p>}</div><LevelBadge level={p.validated_level}/></div>)}{!positions.some(p=>p.validated_level)&&<div className="small-empty">Aucun positionnement final validé.</div>}</div></div>}
+  </div>
+}
+
+
+function StudentSelfAssessment({student,klass,progression=[],selfEvals,onRefresh}) {
+  const [competencies,setCompetencies]=useState([])
+  const [progressionItem,setProgressionItem]=useState('')
+  const [levels,setLevels]=useState({})
+  const [success,setSuccess]=useState('')
+  const [difficulty,setDifficulty]=useState('')
+  const [message,setMessage]=useState('')
+  const [busy,setBusy]=useState(false)
+  useEffect(()=>{let active=true;supabase.from('pp_competencies').select('code,label,group_code,parent_code').eq('diploma_code',klass.diploma_code).order('sort_order').then(({data,error})=>{if(active){if(error)setMessage(toastError(error));else setCompetencies(data||[])}});return()=>{active=false}},[klass.diploma_code])
+  const contexts=progression.filter(p=>p.item_kind==='context')
+  const selectedContext=contexts.find(p=>p.id===progressionItem)
+  const contextCodes=new Set((selectedContext?.competencies||[]).map(c=>typeof c==='string'?c:(c.code||c.parent_code||c.comp_code)).filter(Boolean))
+  const sections=competencies.filter(c=>!c.parent_code).map(parent=>({parent,children:competencies.filter(c=>c.parent_code===parent.code).filter(child=>!progressionItem||contextCodes.has(parent.code)||contextCodes.has(child.code))})).filter(section=>!progressionItem||contextCodes.has(section.parent.code)||section.children.length>0)
+  useEffect(()=>{setLevels({});setSuccess('');setDifficulty('');setMessage('')},[progressionItem])
+  async function save(e){
+    e.preventDefault();if(busy)return
+    const entries=Object.entries(levels).filter(([,v])=>['N','D','A','E','NE'].includes(v))
+    if(!entries.length){setMessage('Positionnez au moins une compétence observée.');return}
+    setBusy(true);setMessage('')
+    const {data:{user},error:authError}=await supabase.auth.getUser()
+    if(authError||!user){setBusy(false);setMessage('Connexion requise.');return}
+    const rows=entries.map(([code,level])=>{const c=competencies.find(x=>x.code===code);return {student_id:student.id,progression_item_id:progressionItem||null,competency_code:code,competency_label:c?.label||code,competency_group:c?.group_code||'',level,success_note:success||null,difficulty_note:difficulty||null,created_by:user.id}})
+    const {error}=await supabase.from('pp_self_evaluations').insert(rows)
+    setBusy(false)
+    if(error){setMessage(toastError(error));return}
+    setLevels({});setSuccess('');setDifficulty('');setMessage(entries.length+' autoévaluation(s) enregistrée(s).')
+    onRefresh()
+  }
+  if(!student.visibility?.self_assessment)return <div className="empty-state compact"><EyeOff/><h3>Autoévaluation désactivée</h3></div>
+  return <div className="pfmp-inline-shell student-self-pfmp-style">
+    <header><h2>Je m’autoévalue</h2><p>Je positionne les compétences que j’ai réellement travaillées. Les autres peuvent rester sans évaluation.</p></header>
+    <form onSubmit={save}>
+      <div className="pfmp-inline-fields"><label>Contexte / activité<select value={progressionItem} onChange={e=>setProgressionItem(e.target.value)}><option value="">Toutes les compétences</option>{contexts.map(c=><option value={c.id} key={c.id}>{c.period_id} — {c.context_name}</option>)}</select></label></div>
+      <div className="pfmp-inline-competencies">{sections.map(({parent,children})=><section className="pfmp-inline-group" key={parent.code}><h3>{parent.code} {parent.label}</h3><p>Je choisis mon niveau uniquement pour les compétences que j’ai travaillées.</p>{(children.length?children:[parent]).map(c=><div className="pfmp-inline-row" key={c.code}><span>{c.label}</span><div className="pfmp-inline-levels">{['N','D','A','E','NE'].map(l=><button type="button" key={l} className={'pfmp-inline-level pfmp-inline-'+l} aria-pressed={levels[c.code]===l} onClick={()=>setLevels(prev=>({...prev,[c.code]:prev[c.code]===l?undefined:l}))}>{l}</button>)}</div></div>)}</section>)}</div>
+      {!sections.length&&<div className="form-message">Aucune compétence disponible pour cette sélection.</div>}
+      <div className="pfmp-inline-notes"><label>Ce que j’ai réussi<textarea rows="3" value={success} onChange={e=>setSuccess(e.target.value)}/></label><label>Ce qui reste difficile<textarea rows="3" value={difficulty} onChange={e=>setDifficulty(e.target.value)}/></label></div>
+      {message&&<div className="form-message" role="status">{message}</div>}
+      <button className="btn primary" disabled={busy||!sections.length} type="submit"><Save/>{busy?'Enregistrement…':'Enregistrer mon autoévaluation'}</button>
+    </form>
+    <div className="panel" style={{marginTop:14}}><h3>Mes dernières autoévaluations</h3>{selfEvals.slice(0,8).map(e=>{const context=contexts.find(c=>c.id===e.progression_item_id);return <div className="recent-row" key={e.id}><div><strong>{e.competency_code} — {e.competency_label}</strong><span>{context?context.context_name+' • ':''}{new Date(e.assessed_at).toLocaleDateString('fr-FR')}</span></div><LevelBadge level={e.level}/></div>})}{!selfEvals.length&&<div className="small-empty">Aucune autoévaluation enregistrée.</div>}</div>
+  </div>
+}
+
+function StudentProgression({items}) {
+  return <div className="timeline">{items.map(i=><div className="timeline-item" key={i.id}><div className="dot"/><div><strong>{i.context_name}</strong><span>{i.period_id} • {i.learning_level} • {i.duration_hours||0} h</span><div className="row wrap mini-meta"><span className="badge info">{i.competencies?.length||0} compétence(s)</span><span className="badge muted">{i.econ_law_links?.length||0} lien(s) éco-droit</span></div></div></div>)}{!items.length&&<div className="small-empty">Aucune progression publiée.</div>}</div>
+}
+
+
+function StudentOwnCcf({student,items,documents,requirements=[],onRefresh}) {
+  const statusLabel={non_evalue:'Non évalué',en_cours:'En cours',valide:'Validé'}
+  return <div className="stack">
+    <div className="exam-grid">{items.map(e=><div className="exam-card static" key={e.exam_code}><div><span className="exam-code">{e.exam_code}</span><strong>{e.exam_label}</strong></div><div className="exam-score">{e.score!=null?<><b>{Number(e.score).toFixed(1)}</b><span>/20</span></>:<span>Non publié</span>}</div><small>Coeff. {e.coefficient||'—'} {e.mode_hint?`• ${e.mode_hint}`:''}</small><div className="student-exam-status"><span className={`badge ${e.status==='valide'?'success':'muted'}`}>{statusLabel[e.status]||e.status}</span></div></div>)}{!items.length&&<div className="small-empty">Aucun résultat CCF publié.</div>}</div>
+    <CcfDocumentSection student={student} exams={items} documents={documents} requirements={requirements} studentMode onRefresh={onRefresh}/>
+  </div>
+}
+
+function StudentOwnPfmp({debriefs}) {
+  return <div className="cards-list">{debriefs.map(d=><div className="mini-card student-pfmp-card" key={d.id}><div className="student-pfmp-head"><div><strong>{d.pfmp_label||d.company||'PFMP'}</strong><span>{d.pfmp_start_date&&d.pfmp_end_date?`${new Date(d.pfmp_start_date+'T12:00:00').toLocaleDateString('fr-FR')} → ${new Date(d.pfmp_end_date+'T12:00:00').toLocaleDateString('fr-FR')}`:new Date(d.debrief_date).toLocaleDateString('fr-FR')}</span></div>{d.company&&<span className="badge info">{d.company}</span>}</div>{d.tutor_name&&<p><b>Tuteur / tutrice :</b> {d.tutor_name}</p>}<p><b>Points forts :</b> {d.strengths||'—'}</p><p><b>Difficultés :</b> {d.difficulties||'—'}</p><p><b>Objectifs suivants :</b> {d.next_objectives||'—'}</p></div>)}{!debriefs.length&&<div className="small-empty">Aucun débrief visible.</div>}</div>
+}
+
+
+function StudentOwnDocuments({student,documents,onRefresh}) {
+  const [err,setErr]=useState('')
+  const [uploading,setUploading]=useState(false)
+  const [scope,setScope]=useState(student.visibility?.pfmp?'pfmp':'report')
+  const allowedScopes=[
+    ...(student.visibility?.pfmp?[['pfmp','PFMP']]:[]),
+    ...(student.visibility?.reports?[['report','Rapport / travail']]:[]),
+  ]
+  const statusLabel={depose:'Déposé',a_verifier:'À vérifier',valide:'Validé',a_corriger:'À corriger'}
+  const visibleDocuments=documents.filter(d=>d.document_scope!=='ccf')
+
+  useEffect(()=>{if(!allowedScopes.some(([k])=>k===scope)&&allowedScopes[0])setScope(allowedScopes[0][0])},[student.visibility?.pfmp,student.visibility?.reports])
+
+  async function download(d){
+    setErr('')
+    const {data,error}=await supabase.storage.from('pp-documents').createSignedUrl(d.storage_path,60)
+    if(error)setErr(toastError(error));else window.open(data.signedUrl,'_blank','noopener,noreferrer')
+  }
+
+  async function upload(file){
+    setErr('')
+    if(!allowedScopes.length){setErr('Aucun type de dépôt n’est actuellement autorisé par votre enseignant.');return}
+    if(file.size>20*1024*1024){setErr('Le fichier dépasse 20 Mo.');return}
+    setUploading(true)
+    try{
+      const {data:{user}}=await supabase.auth.getUser()
+      const safe=safeFileName(file.name)
+      const path=`${user.id}/${student.id}/${Date.now()}-${safe}`
+      const {error:uErr}=await supabase.storage.from('pp-documents').upload(path,file,{upsert:false})
+      if(uErr)throw uErr
+      const {error:dErr}=await supabase.from('pp_documents').insert({
+        student_id:student.id,
+        document_scope:scope,
+        title:file.name,
+        file_name:file.name,
+        storage_path:path,
+        mime_type:file.type||null,
+        file_size:file.size,
+        status:'depose',
+        uploaded_by:user.id
+      })
+      if(dErr){await supabase.storage.from('pp-documents').remove([path]);throw dErr}
+      await onRefresh()
+    }catch(e){setErr(toastError(e))}finally{setUploading(false)}
+  }
+
+  async function remove(d){
+    if(!d.can_delete)return
+    if(!confirm(`Supprimer ${d.file_name||d.title} ?`))return
+    setErr('')
+    const {data:deleted,error:dErr}=await supabase.rpc('pp_delete_my_document',{target_document_id:d.id})
+    if(dErr||deleted!==true){setErr(dErr?toastError(dErr):'Suppression refusée.');return}
+    const {error:sErr}=await supabase.storage.from('pp-documents').remove([d.storage_path])
+    if(sErr)setErr('Le document a bien été retiré de votre dossier, mais le nettoyage du fichier devra être retenté.')
+    await onRefresh()
+  }
+
+  return <div className="panel">
+    <div className="panel-head"><div><h3>Mes documents</h3><p>Consultez les documents publiés et déposez vos fichiers lorsque votre enseignant l’autorise.</p></div></div>
+    {allowedScopes.length>0&&<div className="upload-zone student-upload-zone"><select value={scope} onChange={e=>setScope(e.target.value)}>{allowedScopes.map(([k,l])=><option value={k} key={k}>{l}</option>)}</select><label className="btn primary file-btn"><Upload/>{uploading?'Envoi…':'Déposer un document'}<input type="file" hidden disabled={uploading} onChange={e=>e.target.files?.[0]&&upload(e.target.files[0])}/></label><small>20 Mo maximum.</small></div>}
+    {err&&<div className="form-message">{err}</div>}
+    <div className="cards-list">{visibleDocuments.map(d=><div className="document-row" key={d.id}><div className="doc-icon"><FileText/></div><div><strong>{d.title||d.file_name}</strong><span>{d.document_scope.toUpperCase()} • {statusLabel[d.status]||d.status} • {new Date(d.uploaded_at).toLocaleDateString('fr-FR')}</span>{d.teacher_comment&&<small className="student-document-comment"><b>Commentaire :</b> {d.teacher_comment}</small>}</div><div className="row"><button className="icon-btn" onClick={()=>download(d)} title="Télécharger"><Download/></button>{d.can_delete&&<button className="icon-btn danger-text" onClick={()=>remove(d)} title="Supprimer mon dépôt"><Trash2/></button>}</div></div>)}{!visibleDocuments.length&&<div className="small-empty">Aucun document hors CCF visible.</div>}</div>
+  </div>
+}
+
+function Modal({title,onClose,children}) { return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><h3>{title}</h3><button onClick={onClose}><X/></button></div>{children}</div></div> }
+
+class ProPilotErrorBoundary extends React.Component {
+ constructor(props){super(props);this.state={hasError:false}}
+ static getDerivedStateFromError(){return {hasError:true}}
+ componentDidCatch(error,info){console.error('ProPilot interface error',error,info)}
+ render(){
+  if(this.state.hasError)return <main style={{minHeight:'100vh',display:'grid',placeItems:'center',background:'#f5f7fc',padding:24}}><section style={{maxWidth:510,background:'#fff',padding:32,border:'1px solid #d7e2f1',borderRadius:18,fontFamily:'system-ui',color:'#17243e'}}><h1 style={{fontSize:23}}>ProPilot a rencontré un problème d’affichage</h1><p>Vos informations enregistrées sont conservées. Actualisez la page pour reprendre votre session.</p><button type="button" onClick={()=>window.location.reload()} style={{background:'#2563eb',color:'#fff',border:0,borderRadius:9,padding:'12px 18px',cursor:'pointer'}}>Actualiser ProPilot</button></section></main>;
+  return this.props.children
+ }
+}
+createRoot(document.getElementById('root')).render(<React.StrictMode><ProPilotErrorBoundary><App/></ProPilotErrorBoundary></React.StrictMode>)
+
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(()=>{}))
+}
