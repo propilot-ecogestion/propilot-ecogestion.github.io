@@ -176,7 +176,11 @@ export default function SetupWizard({onClose,onCreated}){
     }
     if(step===3)await patch({organization_mode:draft.organization_mode,collaborators:collaborators()},4)
     if(step===4){
-      const enteredPeriods=pfmps().map(p=>({...p,start_date:p.start_date||'',end_date:p.end_date||''}))
+      const visibleRows=Array.from(document.querySelectorAll('.pfmp-editor .pfmp-row'))
+      const enteredPeriods=pfmps().map((p,i)=>{
+        const inputs=visibleRows[i]?.querySelectorAll('input[type="date"]')
+        return {...p,start_date:inputs?.[0]?.value??p.start_date??'',end_date:inputs?.[1]?.value??p.end_date??''}
+      })
       if(enteredPeriods.some(p=>p.start_date&&p.end_date&&p.end_date<p.start_date)){
         setMessage('La date de fin d’une PFMP doit être postérieure à sa date de début.');return
       }
