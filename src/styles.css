@@ -535,3 +535,16 @@
   .admin-approval-inbox .btn{width:100%}
   .admin-approval-alert .btn{flex:0 1 auto}
 }
+
+/* Administration : transparence sur la disponibilité des alertes e-mail du premier accès. */
+.admin-mail-status{display:flex;align-items:center;gap:13px;margin:0 0 20px;padding:14px 17px;border:1px solid;border-radius:13px}
+.admin-mail-status svg{flex:0 0 auto}
+.admin-mail-status>div{flex:1;min-width:0}
+.admin-mail-status strong{font-size:14px}
+.admin-mail-status p{font-size:12px;margin:4px 0 0;line-height:1.5}
+.admin-mail-status .badge{flex:0 0 auto}
+.admin-mail-status.needs-setup{background:#fff8ec;border-color:#fed7aa;color:#92400e}
+.admin-mail-status.needs-setup p{color:#9a5811}
+.admin-mail-status.is-configured{background:#effaf4;border-color:#bbebce;color:#166534}
+.admin-mail-status.is-configured p{color:#3e7650}
+@media(max-width:620px){.admin-mail-status{align-items:flex-start;flex-wrap:wrap}.admin-mail-status .badge{margin-left:auto}}
