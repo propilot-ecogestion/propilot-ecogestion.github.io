@@ -22,9 +22,12 @@ export default function EvaluationMatrix({klass,readOnly=false,onClassic}){
   const {data:{user},error:authError}=await supabase.auth.getUser()
   if(authError||!user){setMessage('Connexion requise.');setSaving(v=>({...v,[key]:false}));return}
   const previous=latest[key],payload={student_id:student.id,progression_item_id:context||null,competency_code:comp.code,competency_label:comp.label,competency_group:comp.group_code,level:observationOnly?(previous?.level||'NE'):level,source_type:context?'context':'other',source_label:selected?.context_name||'Référentiel complet '+klass.diploma_code,observation:notes[key]||null,assessed_by:user.id}
-  let result
-  if(previous&&previous.assessed_by===user.id)result=await supabase.from('pp_teacher_evaluations').update({level:payload.level,observation:payload.observation,assessed_at:new Date().toISOString()}).eq('id',previous.id).select('id,student_id,competency_code,level,observation,assessed_at,assessed_by').single()
-  else result=await supabase.from('pp_teacher_evaluations').insert(payload).select('id,student_id,competency_code,level,observation,assessed_at,assessed_by').single()
+  // Conserver chaque positionnement successif : l'historique D → E ne doit pas écraser D.
+  // La grille continue d'utiliser la dernière évaluation par date.
+  if(previous&&previous.level===payload.level&&(previous.observation||'')===(payload.observation||'')){
+    setEditing(v=>({...v,[key]:false}));setSaving(v=>({...v,[key]:false}));return
+  }
+  const result=await supabase.from('pp_teacher_evaluations').insert(payload).select('id,student_id,progression_item_id,competency_code,level,observation,assessed_at,assessed_by').single()
   if(result.error)setMessage('Enregistrement refusé : '+result.error.message);else{setLatest(v=>({...v,[key]:result.data}));setEditing(v=>({...v,[key]:false}))}
   setSaving(v=>({...v,[key]:false}))
  }
