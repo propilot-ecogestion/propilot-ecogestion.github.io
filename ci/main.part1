@@ -272,7 +272,7 @@ function App() {
             classes={classes}
             onSelectClass={(id)=>{const c=classes.find(x=>x.id===id);if(c)setActiveClass(c)}}
             onSignOut={signOut}
-            onBack={() => { setPage('dashboard'); setActiveClass(null) }}
+            onBack={() => { setPage('dashboard'); setActiveClass(null); loadClasses() }}
             onClassUpdated={loadClasses}
           />
         )}
