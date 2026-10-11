@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { supabase } from './supabase'
 import {
@@ -87,6 +87,10 @@ function App() {
   const [activeClass, setActiveClass] = useState(null)
   const [notice, setNotice] = useState('')
   const [pendingInvites, setPendingInvites] = useState([])
+  const [pendingTeacherRequests,setPendingTeacherRequests]=useState([])
+  const [adminRequestAlert,setAdminRequestAlert]=useState(null)
+  const [approvalFocusKey,setApprovalFocusKey]=useState(0)
+  const seenTeacherRequestsRef=useRef(null)
   const [guidedTourOpen,setGuidedTourOpen]=useState(false)
 
   useEffect(() => {
@@ -104,6 +108,7 @@ function App() {
   useEffect(() => {
     if (!session) {
       setProfile(null); setStudentAccount(null); setStudentPortalState(null); setClasses([])
+      setPendingTeacherRequests([]);setAdminRequestAlert(null);seenTeacherRequestsRef.current=null
       return
     }
     bootstrapAccount()
@@ -149,6 +154,53 @@ function App() {
     document.addEventListener('visibilitychange',refreshQuietly)
     return ()=>{window.removeEventListener('focus',refreshQuietly);document.removeEventListener('visibilitychange',refreshQuietly)}
   }, [session?.user?.id])
+
+  async function refreshAdminRequests(){
+    if(!session?.user?.id||profile?.role!=='admin'||!profile?.approved)return
+    const {data,error}=await supabase.from('pp_profiles')
+      .select('user_id,display_name,email,created_at')
+      .eq('role','teacher').eq('access_status','pending').eq('approved',false)
+      .order('created_at',{ascending:false})
+    if(error){console.warn('Actualisation des demandes enseignants impossible :',error.message);return}
+    const requests=data||[]
+    const key='propilot-admin-seen-requests:'+session.user.id
+    let seen=seenTeacherRequestsRef.current
+    if(seen===null){
+      try{const stored=JSON.parse(localStorage.getItem(key)||'[]');seen=new Set(Array.isArray(stored)?stored:[])}
+      catch{seen=new Set()}
+      seenTeacherRequestsRef.current=seen
+    }
+    const newRequests=requests.filter(r=>!seen.has(r.user_id))
+    if(newRequests.length){
+      newRequests.forEach(r=>seen.add(r.user_id))
+      try{localStorage.setItem(key,JSON.stringify([...seen].slice(-300)))}catch{}
+      setAdminRequestAlert({
+        count:newRequests.length,
+        name:newRequests[0].display_name||newRequests[0].email||'Un enseignant'
+      })
+    }
+    setPendingTeacherRequests(requests)
+  }
+
+  useEffect(()=>{
+    if(!session?.user?.id||profile?.role!=='admin'||!profile?.approved){
+      setPendingTeacherRequests([])
+      return
+    }
+    refreshAdminRequests()
+    const poll=setInterval(()=>{if(document.visibilityState!=='hidden')refreshAdminRequests()},30000)
+    const focused=()=>{if(document.visibilityState!=='hidden')refreshAdminRequests()}
+    window.addEventListener('focus',focused)
+    document.addEventListener('visibilitychange',focused)
+    return()=>{clearInterval(poll);window.removeEventListener('focus',focused);document.removeEventListener('visibilitychange',focused)}
+  },[session?.user?.id,profile?.role,profile?.approved])
+
+  function openPendingApprovals(){
+    setAdminRequestAlert(null)
+    setActiveClass(null)
+    setPage('admin')
+    setApprovalFocusKey(v=>v+1)
+  }
 
   async function bootstrapAccount() {
     setLoading(true)
@@ -248,12 +300,25 @@ function App() {
       <Sidebar
         profile={profile}
         page={page}
+        pendingApprovalCount={pendingTeacherRequests.length}
+        onOpenApprovals={openPendingApprovals}
         onPage={(p) => { setPage(p); setActiveClass(null) }}
         onSignOut={signOut}
       />
       <main className="main-content">
-        <Topbar profile={profile} classes={classes} activeClass={activeClass} onSelectClass={(id)=>{const c=classes.find(x=>x.id===id);if(c){setActiveClass(c);setPage('class')}}} />
+        <Topbar profile={profile} classes={classes} activeClass={activeClass} pendingApprovalCount={pendingTeacherRequests.length} onOpenApprovals={openPendingApprovals} onSelectClass={(id)=>{const c=classes.find(x=>x.id===id);if(c){setActiveClass(c);setPage('class')}}} />
         {notice && <Notice message={notice} onClose={() => setNotice('')} />}
+        {profile.role==='admin'&&adminRequestAlert&&<div className="admin-approval-alert" role="status">
+          <BellRing size={23} aria-hidden="true"/>
+          <div><strong>{adminRequestAlert.count===1?'Nouvelle demande d’accès enseignant':'Nouvelles demandes d’accès enseignants'}</strong><p>{adminRequestAlert.count===1?adminRequestAlert.name+' attend ton approbation.':adminRequestAlert.count+' nouvelles demandes attendent ton approbation.'}</p></div>
+          <button type="button" className="btn small primary" onClick={openPendingApprovals}>Examiner</button>
+          <button type="button" className="icon-btn" aria-label="Masquer cette notification" onClick={()=>setAdminRequestAlert(null)}><X size={18}/></button>
+        </div>}
+        {profile.role==='admin'&&page==='dashboard'&&pendingTeacherRequests.length>0&&<section className="admin-approval-inbox" aria-label="Demandes d’accès en attente">
+          <div><h3><BellRing size={20} aria-hidden="true"/> {pendingTeacherRequests.length} demande{pendingTeacherRequests.length>1?'s':''} d’accès à valider</h3>
+            <p>{pendingTeacherRequests.slice(0,3).map(r=>r.display_name||r.email||'Enseignant').join(' · ')}{pendingTeacherRequests.length>3?' · …':''}</p>
+          </div><button type="button" className="btn primary" onClick={openPendingApprovals}>Voir et approuver</button>
+        </section>}
         {page === 'dashboard' && (
           <Dashboard
             classes={classes}
@@ -277,7 +342,7 @@ function App() {
           />
         )}
         {page === 'feedback' && <FeedbackPanel classes={classes} />}
-        {page === 'admin' && profile.role === 'admin' && <AdminPanel />}
+        {page === 'admin' && profile.role === 'admin' && <AdminPanel approvalFocusKey={approvalFocusKey} onTeacherAccessChanged={refreshAdminRequests} />}
       </main>
       <GuidedTour open={guidedTourOpen} onClose={()=>{localStorage.setItem(`propilot-guided-tour-v22:${session.user.id}`,'done');setGuidedTourOpen(false)}}/>
     </div>
@@ -418,14 +483,14 @@ function PendingApproval({ profile, onSignOut, onRefresh }) {
   )
 }
 
-function Sidebar({ profile, page, onPage, onSignOut }) {
+function Sidebar({ profile, page, pendingApprovalCount=0, onOpenApprovals, onPage, onSignOut }) {
   return (
     <aside className="sidebar">
       <div className="logo"><img className="sidebar-propilot-logo" src={`${import.meta.env.BASE_URL}propilot-approved.webp?v=sidebar-20261011`} alt="Logo ProPilot" width="50" height="50"/><div><strong>ProPilot</strong><span>Eco-Gestion</span></div></div>
       <nav>
         <button className={page==='dashboard'?'active':''} onClick={()=>onPage('dashboard')}><LayoutDashboard/>Tableau de bord</button>
         <button className={page==='feedback'?'active':''} onClick={()=>onPage('feedback')}><AlertCircle/>Bugs / RETEX</button>
-        {profile.role==='admin' && <button className={page==='admin'?'active':''} onClick={()=>onPage('admin')}><ShieldCheck/>Administration</button>}
+        {profile.role==='admin' && <button className={page==='admin'?'active':''} onClick={()=>pendingApprovalCount?onOpenApprovals():onPage('admin')}><ShieldCheck/>Administration{pendingApprovalCount>0&&<span className="admin-pending-badge" aria-label={`${pendingApprovalCount} demande(s) d’accès en attente`}>{pendingApprovalCount}</span>}</button>}
       </nav>
       <div className="sidebar-bottom">
         <div className="mini-profile"><div className="avatar">{(profile.display_name || profile.email || '?')[0].toUpperCase()}</div><div><strong>{profile.display_name || 'Enseignant'}</strong><span>{profile.role}</span></div></div>
@@ -435,10 +500,10 @@ function Sidebar({ profile, page, onPage, onSignOut }) {
   )
 }
 
-function Topbar({ profile, classes=[], activeClass=null, onSelectClass }) {
+function Topbar({ profile, classes=[], activeClass=null, pendingApprovalCount=0, onOpenApprovals, onSelectClass }) {
   const activeClasses=classes.filter(c=>(c.status||'active')==='active')
   const switcherClasses=activeClass&&!(activeClasses.some(c=>c.id===activeClass.id))?[...activeClasses,activeClass]:activeClasses
-  return <header className="topbar"><div><h2>Bonjour {profile.display_name || ''}</h2><p>Votre espace de suivi PLP Éco-gestion.</p></div><div className="topbar-actions">{activeClasses.length>0&&<label className="class-switcher"><span>Classe</span><select value={activeClass?.id||''} onChange={e=>e.target.value&&onSelectClass?.(e.target.value)}><option value="">Choisir une classe…</option>{switcherClasses.map(c=><option key={c.id} value={c.id}>{c.name}{c.status==='archived'?' (archivée)':''} — {c.pp_diploma_packs?.short_name||c.diploma_code}</option>)}</select></label>}<div className="status-pill"><UserCheck size={17}/>Compte approuvé</div></div></header>
+  return <header className="topbar"><div><h2>Bonjour {profile.display_name || ''}</h2><p>Votre espace de suivi PLP Éco-gestion.</p></div><div className="topbar-actions">{activeClasses.length>0&&<label className="class-switcher"><span>Classe</span><select value={activeClass?.id||''} onChange={e=>e.target.value&&onSelectClass?.(e.target.value)}><option value="">Choisir une classe…</option>{switcherClasses.map(c=><option key={c.id} value={c.id}>{c.name}{c.status==='archived'?' (archivée)':''} — {c.pp_diploma_packs?.short_name||c.diploma_code}</option>)}</select></label>}{profile.role==='admin'&&<button type="button" className={`admin-notification-bell ${pendingApprovalCount?'has-pending':''}`} onClick={onOpenApprovals} aria-label={pendingApprovalCount?`${pendingApprovalCount} demandes d’accès à traiter`:'Consulter les demandes d’accès enseignants'} title="Demandes d’accès enseignants"><BellRing size={19}/>{pendingApprovalCount>0&&<span className="admin-bell-count">{pendingApprovalCount}</span>}</button>}<div className="status-pill"><UserCheck size={17}/>Compte approuvé</div></div></header>
 }
 
 
