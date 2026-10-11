@@ -411,3 +411,67 @@
 .manual-grade-message{font-size:12px;color:#2563eb;margin-top:7px;line-height:1.35}
 @media(max-width:1250px){.summary-layout .summary-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:680px){.summary-layout .summary-cards{grid-template-columns:minmax(0,1fr)}}
+
+/* Tableau de bord : identification harmonisée des formations, une teinte pastel par diplôme. */
+.class-grid .class-card.diploma-card{
+  background:var(--diploma-background,#fff);
+  border-color:var(--diploma-border,#dfe6ef);
+  border-left:4px solid var(--diploma-accent,#94a3b8);
+  padding-left:17px;
+  transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease;
+}
+.class-grid .class-card.diploma-card .class-pill{
+  background:var(--diploma-pill,#eff6ff);
+  color:var(--diploma-text,#1d4ed8);
+}
+.class-grid .class-card.diploma-card h3{color:#122039}
+.class-grid .class-card.diploma-card p{color:#475569}
+.class-grid .class-card.diploma-card small{color:#64748b}
+.class-grid .class-card.diploma-card:hover{
+  border-color:var(--diploma-accent,#64748b);
+  box-shadow:0 9px 26px rgba(15,23,42,.09);
+  transform:translateY(-1px);
+}
+.class-grid .class-card.diploma-card:focus-visible{outline:3px solid var(--diploma-accent,#2563eb);outline-offset:3px}
+.class-grid .diploma-mrc{
+  --diploma-background:#eaf8fa;
+  --diploma-border:#b5dfe3;
+  --diploma-accent:#238293;
+  --diploma-pill:#d1eff1;
+  --diploma-text:#135e6a;
+}
+.class-grid .diploma-mcva{
+  --diploma-background:#eef9f2;
+  --diploma-border:#bee4cc;
+  --diploma-accent:#35865b;
+  --diploma-pill:#d9f1e2;
+  --diploma-text:#1b6a45;
+}
+.class-grid .diploma-mcvb{
+  --diploma-background:#fff5eb;
+  --diploma-border:#f2d6b7;
+  --diploma-accent:#c07a2d;
+  --diploma-pill:#ffe6cb;
+  --diploma-text:#8f5214;
+}
+.class-grid .diploma-agora{
+  --diploma-background:#eff4ff;
+  --diploma-border:#c3d2f7;
+  --diploma-accent:#4c6db9;
+  --diploma-pill:#dae6ff;
+  --diploma-text:#32549c;
+}
+.class-grid .diploma-accueil{
+  --diploma-background:#f6f1ff;
+  --diploma-border:#ddcef6;
+  --diploma-accent:#8662b4;
+  --diploma-pill:#eaddfa;
+  --diploma-text:#654295;
+}
+.class-grid .diploma-epc{
+  --diploma-background:#fff1f3;
+  --diploma-border:#f1c9d2;
+  --diploma-accent:#c06880;
+  --diploma-pill:#ffe0e8;
+  --diploma-text:#954358;
+}
