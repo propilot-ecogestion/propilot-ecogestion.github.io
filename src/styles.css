@@ -475,3 +475,9 @@
   --diploma-pill:#ffb4ca;
   --diploma-text:#912e55;
 }
+
+/* Confirmation explicite avant suppression définitive d'un RETEX dans l'administration. */
+.admin-feedback-row .retex-delete-confirm{width:100%;max-width:320px;padding:11px 12px;background:#fff7f7;border:1px solid #fecaca;border-radius:10px}
+.admin-feedback-row .retex-delete-confirm p{margin:0 0 10px;font-size:12px;line-height:1.45;color:#991b1b}
+.admin-feedback-row .retex-delete-confirm .row{gap:6px}
+.admin-feedback-row .retex-delete-confirm .btn{white-space:normal;text-align:center}
