@@ -437,6 +437,7 @@ function Sidebar({ profile, page, onPage, onSignOut }) {
 
 function Topbar({ profile, classes=[], activeClass=null, onSelectClass }) {
   const activeClasses=classes.filter(c=>(c.status||'active')==='active')
+  const switcherClasses=activeClass&&!(activeClasses.some(c=>c.id===activeClass.id))?[...activeClasses,activeClass]:activeClasses
   return <header className="topbar"><div><h2>Bonjour {profile.display_name || ''}</h2><p>Votre espace de suivi PLP Éco-gestion.</p></div><div className="topbar-actions">{activeClasses.length>0&&<label className="class-switcher"><span>Classe</span><select value={activeClass?.id||''} onChange={e=>e.target.value&&onSelectClass?.(e.target.value)}><option value="">Choisir une classe…</option>{activeClasses.map(c=><option key={c.id} value={c.id}>{c.name} — {c.pp_diploma_packs?.short_name||c.diploma_code}</option>)}</select></label>}<div className="status-pill"><UserCheck size={17}/>Compte approuvé</div></div></header>
 }
 
