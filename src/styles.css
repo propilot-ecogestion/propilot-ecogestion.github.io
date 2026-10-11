@@ -359,3 +359,26 @@
 @media(max-width:900px){.auth-brand>.brand-badge{width:130px;height:130px;border-radius:28px}}
 @media(max-width:520px){.auth-brand>.brand-badge{width:112px;height:112px;border-radius:24px}}
 
+
+/* Explication contextuelle du calcul de la note : discrète et accessible au clic. */
+.summary-card.note-help-card{position:relative;overflow:visible}
+.note-help-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.note-help-trigger{width:29px;height:29px;flex-shrink:0;display:grid;place-items:center;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:50%;cursor:pointer;padding:0}
+.note-help-trigger:hover,.note-help-trigger[aria-expanded="true"]{background:#dbeafe}
+.note-help-trigger:focus-visible,.note-help-close:focus-visible{outline:3px solid #60a5fa;outline-offset:2px}
+.note-help-popover{position:absolute;top:50px;right:12px;z-index:45;width:min(380px,calc(100vw - 40px));background:#fff;border:1px solid #cbd5e1;border-radius:16px;box-shadow:0 15px 35px rgba(15,23,42,.16);padding:17px;color:#334155;font-size:13px;line-height:1.5;text-align:left}
+.note-help-popover-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;border-bottom:1px solid #e2e8f0;padding-bottom:9px}
+.note-help-popover .note-help-popover-heading strong{font-size:15px;color:#0f172a;margin:0;font-weight:700}
+.note-help-close{width:24px;height:24px;flex-shrink:0;background:#f1f5f9;border:0;border-radius:7px;color:#475569;font-size:21px;line-height:1;cursor:pointer}
+.note-help-popover p{margin:10px 0;font-size:13px;color:#334155}
+.note-help-scale{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:12px 0}
+.note-help-scale-item{background:#f1f5f9;border-radius:9px;display:flex;flex-direction:column;gap:2px;align-items:center;padding:8px 3px}
+.note-help-popover .note-help-scale-item b{font-size:14px;color:#0f172a}
+.note-help-popover .note-help-scale-item small{font-size:12px;color:#475569}
+.note-help-modes{border-top:1px solid #e2e8f0;margin-top:12px;padding-top:3px}
+.note-help-modes b,.note-help-example b{color:#0f172a}
+.note-help-example{background:#f1f5f9;border-radius:10px;padding:11px;margin:10px 0;color:#334155}
+.note-help-example>div{margin-top:5px}
+.note-help-popover .note-help-example strong{font-size:13px;margin:0;color:#0f172a}
+.note-help-active{margin-top:9px;font-size:12px;color:#1d4ed8}
+.note-help-popover .note-help-footer{font-size:12px;color:#64748b;margin-bottom:0}
