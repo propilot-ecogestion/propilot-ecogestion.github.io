@@ -548,3 +548,10 @@
 .admin-mail-status.is-configured{background:#effaf4;border-color:#bbebce;color:#166534}
 .admin-mail-status.is-configured p{color:#3e7650}
 @media(max-width:620px){.admin-mail-status{align-items:flex-start;flex-wrap:wrap}.admin-mail-status .badge{margin-left:auto}}
+
+/* Contrôle de réception Gmail, accessible uniquement dans l'administration. */
+.admin-mail-status .btn{font-size:12px;white-space:normal;text-align:center;flex-shrink:0;max-width:170px}
+.admin-gmail-test-result{margin:-8px 0 18px;padding:11px 15px;border-radius:10px;border:1px solid;font-size:13px;font-weight:650}
+.admin-gmail-test-result.success{background:#effaf4;border-color:#bbebce;color:#166534}
+.admin-gmail-test-result.error{background:#fff2f3;border-color:#f4b4c0;color:#9f1239}
+@media(max-width:700px){.admin-mail-status .btn{max-width:none;flex:1 0 100%}}
