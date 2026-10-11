@@ -382,3 +382,13 @@
 .note-help-popover .note-help-example strong{font-size:13px;margin:0;color:#0f172a}
 .note-help-active{margin-top:9px;font-size:12px;color:#1d4ed8}
 .note-help-popover .note-help-footer{font-size:12px;color:#64748b;margin-bottom:0}
+
+
+/* En-tête classe : logo ProPilot vectoriel validé à la place de l'ancien logo académique. */
+.academy-brand.propilot-institutional-brand{flex:none}
+.academy-brand.propilot-institutional-brand img{display:block;width:58px;height:62px;object-fit:contain;object-position:center;background:transparent}
+.academy-brand.propilot-institutional-brand span{display:none}
+@media(max-width:700px){
+  .academy-brand.propilot-institutional-brand img{display:block;width:44px;height:48px}
+  .academy-brand.propilot-institutional-brand span{display:none}
+}
