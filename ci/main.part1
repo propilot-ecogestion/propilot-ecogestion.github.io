@@ -421,7 +421,7 @@ function PendingApproval({ profile, onSignOut, onRefresh }) {
 function Sidebar({ profile, page, onPage, onSignOut }) {
   return (
     <aside className="sidebar">
-      <div className="logo"><GraduationCap/><div><strong>ProPilot</strong><span>Eco-Gestion</span></div></div>
+      <div className="logo"><img className="sidebar-propilot-logo" src={`${import.meta.env.BASE_URL}propilot-approved.webp?v=sidebar-20261011`} alt="Logo ProPilot" width="50" height="50"/><div><strong>ProPilot</strong><span>Eco-Gestion</span></div></div>
       <nav>
         <button className={page==='dashboard'?'active':''} onClick={()=>onPage('dashboard')}><LayoutDashboard/>Tableau de bord</button>
         <button className={page==='feedback'?'active':''} onClick={()=>onPage('feedback')}><AlertCircle/>Bugs / RETEX</button>
@@ -455,7 +455,7 @@ function EstablishmentIdentity({ establishment }) {
 }
 
 function InstitutionalIdentity({establishment}) {
-  return <div className="institutional-identity"><div className="academy-brand propilot-institutional-brand"><img src={`${import.meta.env.BASE_URL}propilot-approved.webp?v=logo-original-20261011`} alt="Logo ProPilot Éco-Gestion" onError={e=>{e.currentTarget.style.display='none';if(e.currentTarget.nextElementSibling)e.currentTarget.nextElementSibling.style.display='block'}}/><span>ProPilot Éco-Gestion</span></div><div className="institutional-divider"/><EstablishmentIdentity establishment={establishment}/></div>
+  return <div className="institutional-identity"><div className="academy-brand"><img src={`${import.meta.env.BASE_URL}academie-aix-marseille.svg`} alt="Académie d’Aix-Marseille" onError={e=>{e.currentTarget.style.display='none';if(e.currentTarget.nextElementSibling)e.currentTarget.nextElementSibling.style.display='block'}}/><span>Académie d’Aix-Marseille</span></div><div className="institutional-divider"/><EstablishmentIdentity establishment={establishment}/></div>
 }
 
 function Dashboard({ classes, pendingInvites=[], onAcceptInvite, onDeclineInvite, onOpenClass, onCreated }) {
