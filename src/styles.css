@@ -386,3 +386,28 @@
 /* Identité de ProPilot dans le bandeau latéral (logo approuvé, haute définition). */
 .sidebar .logo .sidebar-propilot-logo{display:block;width:50px;height:50px;flex:0 0 50px;object-fit:contain;object-position:center;border-radius:8px}
 @media(max-width:900px){.sidebar .logo .sidebar-propilot-logo{width:44px;height:44px;flex-basis:44px}}
+
+
+/* Synthèse élève : note fixée par l'enseignant, distincte du calcul indicatif. */
+.summary-layout .summary-cards{grid-template-columns:repeat(4,minmax(0,1fr))}
+.summary-layout .summary-card{min-width:0}
+.manual-grade-card{border-left:4px solid #2563eb!important}
+.summary-card.manual-grade-card>.manual-grade-display{font-variant-numeric:tabular-nums;color:#0f172a}
+.manual-grade-controls{margin-top:12px}
+.manual-grade-action{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:8px;padding:7px 10px;font-size:12px;font-weight:650;cursor:pointer;line-height:1.35}
+.manual-grade-action:hover{background:#dbeafe}
+.manual-grade-action:disabled{opacity:.6;cursor:not-allowed}
+.manual-grade-action.primary{background:#2563eb;color:#fff;border-color:#2563eb}
+.manual-grade-action.primary:hover:not(:disabled){background:#1d4ed8}
+.manual-grade-action.quiet{background:#fff;color:#475569;border-color:#cbd5e1}
+.manual-grade-action.remove{color:#be123c;border-color:#fecdd3}
+.manual-grade-editor{display:flex;flex-direction:column;gap:7px}
+.manual-grade-editor label{font-weight:600;color:#475569;font-size:12px}
+.manual-grade-input-row{display:flex;align-items:center;gap:8px}
+.manual-grade-input-row input{background:#fff;max-width:116px;width:100%;height:34px;border:1px solid #94a3b8;border-radius:8px;padding:6px 9px;color:#0f172a;font-size:14px;font-variant-numeric:tabular-nums}
+.manual-grade-input-row>span,.teacher-personal-workspace .manual-grade-input-row>span{font-size:13px;color:#64748b}
+.manual-grade-input-row input:focus-visible{outline:2px solid #3b82f6;outline-offset:1px}
+.manual-grade-actions{display:flex;flex-wrap:wrap;gap:6px}
+.manual-grade-message{font-size:12px;color:#2563eb;margin-top:7px;line-height:1.35}
+@media(max-width:1250px){.summary-layout .summary-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:680px){.summary-layout .summary-cards{grid-template-columns:minmax(0,1fr)}}
