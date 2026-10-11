@@ -44,6 +44,21 @@ jobs:
             --output public/propilot-approved.webp
           test -s public/propilot-approved.webp
 
+      - name: Create crisp browser and app icons from approved logo
+        run: |
+          if command -v magick >/dev/null 2>&1; then
+            CONVERTER=magick
+          elif command -v convert >/dev/null 2>&1; then
+            CONVERTER=convert
+          else
+            echo "ImageMagick is required to generate ProPilot icons" >&2
+            exit 1
+          fi
+          for size in 16 32 180 192 512; do
+            "$CONVERTER" public/propilot-approved.webp -auto-orient -thumbnail "${size}x${size}" -background none -gravity center -extent "${size}x${size}" "public/icon-${size}.png"
+            test -s "public/icon-${size}.png"
+          done
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
