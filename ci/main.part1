@@ -455,7 +455,7 @@ function EstablishmentIdentity({ establishment }) {
 }
 
 function InstitutionalIdentity({establishment}) {
-  return <div className="institutional-identity"><div className="academy-brand propilot-institutional-brand"><img src={`${import.meta.env.BASE_URL}propilot-logo.svg`} alt="Logo ProPilot Éco-Gestion" onError={e=>{e.currentTarget.style.display='none';if(e.currentTarget.nextElementSibling)e.currentTarget.nextElementSibling.style.display='block'}}/><span>ProPilot Éco-Gestion</span></div><div className="institutional-divider"/><EstablishmentIdentity establishment={establishment}/></div>
+  return <div className="institutional-identity"><div className="academy-brand propilot-institutional-brand"><img src={`${import.meta.env.BASE_URL}propilot-approved.webp?v=logo-original-20261011`} alt="Logo ProPilot Éco-Gestion" onError={e=>{e.currentTarget.style.display='none';if(e.currentTarget.nextElementSibling)e.currentTarget.nextElementSibling.style.display='block'}}/><span>ProPilot Éco-Gestion</span></div><div className="institutional-divider"/><EstablishmentIdentity establishment={establishment}/></div>
 }
 
 function Dashboard({ classes, pendingInvites=[], onAcceptInvite, onDeclineInvite, onOpenClass, onCreated }) {
