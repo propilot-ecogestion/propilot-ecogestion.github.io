@@ -481,3 +481,57 @@
 .admin-feedback-row .retex-delete-confirm p{margin:0 0 10px;font-size:12px;line-height:1.45;color:#991b1b}
 .admin-feedback-row .retex-delete-confirm .row{gap:6px}
 .admin-feedback-row .retex-delete-confirm .btn{white-space:normal;text-align:center}
+
+/* Notifications d'accès enseignants : visibles exclusivement dans l'espace administrateur. */
+.sidebar nav button .admin-pending-badge{
+  margin-left:auto;min-width:24px;height:24px;padding:0 7px;
+  display:inline-flex;align-items:center;justify-content:center;
+  border-radius:999px;background:#dc3545;color:#fff;font-size:12px;font-weight:800;
+  box-shadow:0 0 0 2px #1e293b;
+}
+.admin-notification-bell{
+  position:relative;display:inline-flex;align-items:center;justify-content:center;
+  min-width:40px;height:40px;padding:8px;border:1px solid #dbe2ea;
+  background:#fff;color:#475569;border-radius:12px;cursor:pointer;
+}
+.admin-notification-bell.has-pending{
+  color:#b42338;border-color:#f4b4c0;background:#fff0f2;
+  box-shadow:0 0 0 3px rgba(239,68,68,.07);
+}
+.admin-bell-count{
+  position:absolute;top:-7px;right:-7px;display:inline-flex;
+  align-items:center;justify-content:center;min-width:21px;height:21px;
+  border-radius:999px;padding:0 4px;background:#d92d46;color:#fff;
+  font-size:11px;font-weight:800;border:2px solid #fff;
+}
+.admin-approval-alert{
+  display:flex;gap:13px;align-items:center;margin:18px 34px 0;
+  background:#fff1f3;color:#842029;border:1px solid #f4a6b5;
+  border-left:5px solid #df3a51;border-radius:12px;padding:14px 16px;
+  box-shadow:0 7px 22px rgba(190,28,55,.08);
+}
+.admin-approval-alert>svg{flex-shrink:0;color:#b42338}
+.admin-approval-alert>div{flex:1;min-width:0}
+.admin-approval-alert strong{font-size:14px}
+.admin-approval-alert p{font-size:13px;margin:4px 0 0;color:#9f3448}
+.admin-approval-inbox{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  margin:18px 34px 0;padding:17px 20px;background:#fff6f7;
+  border:1px solid #f6bec7;border-left:5px solid #d92d46;border-radius:13px;
+}
+.admin-approval-inbox h3{display:flex;align-items:center;gap:9px;color:#8a2236;font-size:16px;margin:0}
+.admin-approval-inbox p{margin:6px 0 0;color:#6d4750;font-size:13px}
+.admin-teacher-pending-summary{
+  display:flex;align-items:center;gap:11px;flex-wrap:wrap;
+  background:#fff2f3;border:1px solid #f5bbc5;color:#942438;
+  border-radius:12px;padding:13px 15px;
+}
+.admin-teacher-pending-summary strong{flex:1;font-size:13px}
+.admin-teacher-pending-summary svg{flex-shrink:0}
+.admin-notification-bell:focus-visible,.admin-approval-inbox button:focus-visible,
+.admin-approval-alert button:focus-visible{outline:3px solid #2563eb;outline-offset:2px}
+@media(max-width:760px){
+  .admin-approval-alert,.admin-approval-inbox{margin:12px 14px 0;flex-wrap:wrap;padding:12px}
+  .admin-approval-inbox .btn{width:100%}
+  .admin-approval-alert .btn{flex:0 1 auto}
+}
