@@ -306,7 +306,7 @@ function FeedbackPanel({classes=[]}) {
   </section>
 }
 
-function AdminPanel() {
+function AdminPanel({approvalFocusKey=0,onTeacherAccessChanged}) {
   const [profiles,setProfiles]=useState([])
   const [feedback,setFeedback]=useState([])
   const [pilot,setPilot]=useState(null)
@@ -322,6 +322,13 @@ function AdminPanel() {
   const [deletingRetexId,setDeletingRetexId]=useState(null)
   const [teacherFilter,setTeacherFilter]=useState('all')
   const [teacherSearch,setTeacherSearch]=useState('')
+  useEffect(()=>{
+    if(!approvalFocusKey)return
+    setTab('teachers')
+    setTeacherFilter('pending')
+    setTeacherSearch('')
+    load()
+  },[approvalFocusKey])
   async function load(){
     const [p,f,pi,po,c,e,h]=await Promise.all([
       supabase.from('pp_profiles').select('*').order('created_at',{ascending:false}),
@@ -365,6 +372,7 @@ function AdminPanel() {
       if(!data||data.access_status!==status)throw new Error('Modification non confirmée par le serveur.')
       setMessage(status==='approved'?'Compte enseignant approuvé.':status==='suspended'?'Compte enseignant suspendu.':'Demande refusée : l’enseignant a été retiré de la liste.')
       await load()
+      await onTeacherAccessChanged?.()
     } catch(e){setMessage(toastError(e))}
     finally{setChangingAccess('')}
   }
@@ -406,7 +414,7 @@ function AdminPanel() {
       const rank=p=>p.role==='admin'?0:(!p.approved?1:2)
       return rank(a)-rank(b)||String(a.display_name||a.email||'').localeCompare(String(b.display_name||b.email||''),'fr')
     })
-  return <section className="content-section"><div className="section-head"><div><h1>Administration pilote</h1><p>Gestion technique des professeurs et de l’application, sans accès par défaut aux données nominatives des élèves.</p></div></div><div className="stats-grid"><Stat icon={<Users/>} value={`${pilotOverview?.approved_teachers??approved}/${capacity}`} label="Professeurs pilotes"/><Stat icon={<Clock3/>} value={pilotOverview?.pending_teachers??pending} label="En attente"/><Stat icon={<School/>} value={pilotOverview?.active_classes??classes.filter(c=>c.status==='active').length} label="Classes actives"/><Stat icon={<AlertCircle/>} value={openRetex} label="RETEX ouverts"/></div><div className="tabs scroll-tabs"><button className={tab==='teachers'?'active':''} onClick={()=>setTab('teachers')}><Users/>Professeurs</button><button className={tab==='retex'?'active':''} onClick={()=>setTab('retex')}><AlertCircle/>Bugs / RETEX</button><button className={tab==='platform'?'active':''} onClick={()=>setTab('platform')}><Settings/>Plateforme</button></div>{message&&<div className="form-message success">{message}</div>}{tab==='teachers'&&<div className="stack"><div className="panel"><div className="row wrap"><label className="grow">Rechercher<input value={teacherSearch} onChange={e=>setTeacherSearch(e.target.value)} placeholder="Nom ou adresse académique…"/></label><label>Afficher<select value={teacherFilter} onChange={e=>setTeacherFilter(e.target.value)}><option value="all">Tous les comptes</option><option value="pending">En attente</option><option value="approved">Professeurs approuvés</option><option value="suspended">Suspendus</option><option value="admin">Administrateurs</option></select></label></div><p className="muted">Pilote : {approved} professeur{approved>1?'s':''} approuvé{approved>1?'s':''} sur {capacity}. Les nouvelles inscriptions restent en attente tant que tu ne les approuves pas.</p></div><div className="table-card"><table><thead><tr><th>Enseignant</th><th>E-mail</th><th>Rôle</th><th>Statut</th><th></th></tr></thead><tbody>{visibleProfiles.map(p=><tr key={p.user_id}><td>{p.display_name||'—'}</td><td>{p.email}</td><td>{p.role}</td><td>{p.role==='admin'?'Administrateur':({approved:'Approuvé',pending:'En attente',suspended:'Suspendu',rejected:'Refusé'}[p.access_status]||'En attente')}</td><td>{p.role==='teacher'&&<div style={{display:'flex',flexDirection:'column',gap:6}}>
+  return <section className="content-section"><div className="section-head"><div><h1>Administration pilote</h1><p>Gestion technique des professeurs et de l’application, sans accès par défaut aux données nominatives des élèves.</p></div></div><div className="stats-grid"><Stat icon={<Users/>} value={`${pilotOverview?.approved_teachers??approved}/${capacity}`} label="Professeurs pilotes"/><Stat icon={<Clock3/>} value={pilotOverview?.pending_teachers??pending} label="En attente"/><Stat icon={<School/>} value={pilotOverview?.active_classes??classes.filter(c=>c.status==='active').length} label="Classes actives"/><Stat icon={<AlertCircle/>} value={openRetex} label="RETEX ouverts"/></div><div className="tabs scroll-tabs"><button className={tab==='teachers'?'active':''} onClick={()=>setTab('teachers')}><Users/>Professeurs</button><button className={tab==='retex'?'active':''} onClick={()=>setTab('retex')}><AlertCircle/>Bugs / RETEX</button><button className={tab==='platform'?'active':''} onClick={()=>setTab('platform')}><Settings/>Plateforme</button></div>{message&&<div className="form-message success">{message}</div>}{tab==='teachers'&&<div className="stack">{pending>0&&<div className="admin-teacher-pending-summary"><BellRing size={19}/><strong>{pending} demande{pending>1?'s':''} d’accès enseignant en attente de validation.</strong><button type="button" className="btn small" onClick={()=>{setTeacherFilter('pending');setTeacherSearch('')}}>Afficher les demandes</button></div>}<div className="panel"><div className="row wrap"><label className="grow">Rechercher<input value={teacherSearch} onChange={e=>setTeacherSearch(e.target.value)} placeholder="Nom ou adresse académique…"/></label><label>Afficher<select value={teacherFilter} onChange={e=>setTeacherFilter(e.target.value)}><option value="all">Tous les comptes</option><option value="pending">En attente</option><option value="approved">Professeurs approuvés</option><option value="suspended">Suspendus</option><option value="admin">Administrateurs</option></select></label></div><p className="muted">Pilote : {approved} professeur{approved>1?'s':''} approuvé{approved>1?'s':''} sur {capacity}. Les nouvelles inscriptions restent en attente tant que tu ne les approuves pas.</p></div><div className="table-card"><table><thead><tr><th>Enseignant</th><th>E-mail</th><th>Rôle</th><th>Statut</th><th></th></tr></thead><tbody>{visibleProfiles.map(p=><tr key={p.user_id}><td>{p.display_name||'—'}</td><td>{p.email}</td><td>{p.role}</td><td>{p.role==='admin'?'Administrateur':({approved:'Approuvé',pending:'En attente',suspended:'Suspendu',rejected:'Refusé'}[p.access_status]||'En attente')}</td><td>{p.role==='teacher'&&<div style={{display:'flex',flexDirection:'column',gap:6}}>
 <div className="row wrap" style={{gap:6}}>
 {p.access_status!=='approved'&&<button type="button" className="btn small primary" disabled={!!changingAccess||approved>=capacity} onClick={()=>setConfirmAccess({user_id:p.user_id,status:'approved'})}>Approuver</button>}
 {p.access_status==='approved'&&<button type="button" className="btn small" disabled={!!changingAccess} onClick={()=>setConfirmAccess({user_id:p.user_id,status:'suspended'})}>Suspendre</button>}
