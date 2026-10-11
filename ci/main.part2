@@ -233,11 +233,12 @@ function StudentDetail({ klass, student, readOnly=false, initialEdit=false, onBa
   const [documents,setDocuments]=useState([])
   const [ccfRequirements,setCcfRequirements]=useState([])
   const [finalPositions,setFinalPositions]=useState([])
+  const [manualGrade,setManualGrade]=useState(null)
   const [editOpen,setEditOpen]=useState(initialEdit)
   const [message,setMessage]=useState('')
 
   async function loadAll(){
-    const [setR,evR,seR,ppR,pdR,erR,exR,docR,reqR,fpR]=await Promise.all([
+    const [setR,evR,seR,ppR,pdR,erR,exR,docR,reqR,fpR,gradeR]=await Promise.all([
       supabase.from('pp_class_settings').select('*').eq('class_id',klass.id).maybeSingle(),
       supabase.from('pp_teacher_evaluations').select('*').eq('student_id',student.id).order('assessed_at',{ascending:false}),
       supabase.from('pp_self_evaluations').select('*').eq('student_id',student.id).order('assessed_at',{ascending:false}),
@@ -247,9 +248,10 @@ function StudentDetail({ klass, student, readOnly=false, initialEdit=false, onBa
       supabase.from('pp_exams').select('*').eq('diploma_code',klass.diploma_code).order('sort_order'),
       supabase.from('pp_documents').select('*').eq('student_id',student.id).order('uploaded_at',{ascending:false}),
       supabase.from('pp_ccf_document_requirements').select('*').eq('class_id',klass.id).eq('active',true).order('exam_code').order('sort_order'),
-      supabase.from('pp_final_positions').select('*').eq('student_id',student.id)
+      supabase.from('pp_final_positions').select('*').eq('student_id',student.id),
+      supabase.from('pp_student_manual_grades').select('student_id,grade,updated_at,updated_by').eq('student_id',student.id).maybeSingle()
     ])
-    if(setR.data)setSettings(setR.data); setEvaluations(evR.data||[]); setSelfEvaluations(seR.data||[]); setPfmpPeriods(ppR.data||[]); setPfmpDebriefs(pdR.data||[]); setExamResults(erR.data||[]); setExams(exR.data||[]); setDocuments(docR.data||[]); setCcfRequirements(reqR.data||[]); setFinalPositions(fpR.data||[])
+    if(setR.data)setSettings(setR.data); setEvaluations(evR.data||[]); setSelfEvaluations(seR.data||[]); setPfmpPeriods(ppR.data||[]); setPfmpDebriefs(pdR.data||[]); setExamResults(erR.data||[]); setExams(exR.data||[]); setDocuments(docR.data||[]); setCcfRequirements(reqR.data||[]); setFinalPositions(fpR.data||[]); setManualGrade(gradeR.data||null)
   }
   useEffect(()=>{loadAll()},[student.id])
   const synthesis=useMemo(()=>computeSynthesis(evaluations,settings.note_mapping,settings.synthesis_mode),[evaluations,settings])
@@ -261,7 +263,7 @@ function StudentDetail({ klass, student, readOnly=false, initialEdit=false, onBa
     <div className="student-hero printable"><div className="avatar big">{student.first_name?.[0]}{student.last_name?.[0]}</div><div><h2>{student.first_name} {student.last_name}</h2><p>{klass.name} {student.group_name?`• ${student.group_name}`:''}</p><div className="row"><StatusBadge ok={student.access_enabled}>{student.access_enabled?'Espace élève activé':'Espace élève désactivé'}</StatusBadge>{student.email&&<span className="badge info">{student.email}</span>}</div></div></div>
     {message&&<div className="form-message no-print">{message}</div>}
     <div className="tabs scroll-tabs no-print">{[['summary','Synthèse',BarChart3],['evaluations','Évaluations',ClipboardCheck],['pfmp','PFMP',BriefcaseBusiness],['ccf','CCF',ListChecks],['documents','Documents',FolderOpen]].map(([k,l,I])=><button key={k} className={tab===k?'active':''} onClick={()=>setTab(k)}><I size={17}/>{l}</button>)}</div>
-    <div className="printable">{tab==='summary'&&<StudentSummary student={student} synthesis={synthesis} evaluations={evaluations} finalPositions={finalPositions} noteEnabled={settings.note_enabled} synthesisMode={settings.synthesis_mode} noteMapping={settings.note_mapping} readOnly={readOnly} onRefresh={loadAll}/>}</div>
+    <div className="printable">{tab==='summary'&&<StudentSummary student={student} synthesis={synthesis} evaluations={evaluations} finalPositions={finalPositions} noteEnabled={settings.note_enabled} synthesisMode={settings.synthesis_mode} noteMapping={settings.note_mapping} manualGrade={manualGrade} readOnly={readOnly} onRefresh={loadAll}/>}</div>
     {tab==='evaluations'&&<EvaluationHistory evaluations={evaluations} selfEvaluations={selfEvaluations} readOnly={readOnly} onRefresh={loadAll}/>} 
     {tab==='pfmp'&&<StudentPfmp student={student} periods={pfmpPeriods} debriefs={pfmpDebriefs} readOnly={readOnly} onRefresh={loadAll}/>} 
     {tab==='ccf'&&<StudentCcf student={student} exams={exams} results={examResults} documents={documents} requirements={ccfRequirements} readOnly={readOnly} onRefresh={loadAll}/>} 
@@ -270,10 +272,14 @@ function StudentDetail({ klass, student, readOnly=false, initialEdit=false, onBa
   </>
 }
 
-function StudentSummary({ student, synthesis, evaluations, finalPositions, noteEnabled, synthesisMode='latest_per_competency', noteMapping={N:5,D:10,A:15,E:20}, readOnly=false, onRefresh }) {
+function StudentSummary({ student, synthesis, evaluations, finalPositions, noteEnabled, synthesisMode='latest_per_competency', noteMapping={N:5,D:10,A:15,E:20}, manualGrade=null, readOnly=false, onRefresh }) {
   const [saving,setSaving]=useState('')
   const [comments,setComments]=useState({})
   const [noteHelpOpen,setNoteHelpOpen]=useState(false)
+  const [gradeEditing,setGradeEditing]=useState(false)
+  const [gradeDraft,setGradeDraft]=useState('')
+  const [gradeSaving,setGradeSaving]=useState(false)
+  const [gradeMessage,setGradeMessage]=useState('')
   const gradeValue=v=>Number.isFinite(Number(v))?Number(v).toLocaleString('fr-FR',{maximumFractionDigits:1}):'—'
   const mapping=noteMapping||{N:5,D:10,A:15,E:20}
   const latest=synthesis.latest
@@ -281,6 +287,43 @@ function StudentSummary({ student, synthesis, evaluations, finalPositions, noteE
   useEffect(()=>{
     setComments(Object.fromEntries(finalPositions.map(p=>[p.competency_code,p.teacher_comment||''])))
   },[finalPositions])
+  useEffect(()=>{
+    setGradeDraft(manualGrade?.grade==null?'':String(manualGrade.grade).replace('.',','))
+    setGradeEditing(false)
+    setGradeMessage('')
+  },[student.id,manualGrade?.grade])
+
+  async function saveManualGrade(){
+    const raw=gradeDraft.trim().replace(',','.')
+    if(!/^\d{1,2}(?:\.\d{1,2})?$/.test(raw)||!Number.isFinite(Number(raw))||Number(raw)<0||Number(raw)>20){
+      setGradeMessage('Saisis une note entre 0 et 20, avec au maximum deux décimales.')
+      return
+    }
+    setGradeSaving(true);setGradeMessage('')
+    try {
+      const {data,error:authError}=await supabase.auth.getUser()
+      if(authError||!data?.user?.id)throw authError||new Error('Session expirée. Reconnecte-toi.')
+      const {error}=await supabase.from('pp_student_manual_grades').upsert({
+        student_id:student.id,grade:Number(raw),updated_by:data.user.id,updated_at:new Date().toISOString()
+      },{onConflict:'student_id'})
+      if(error)throw error
+      setGradeEditing(false)
+      await onRefresh()
+      setGradeMessage('Note du professeur enregistrée.')
+    }catch(e){setGradeMessage(toastError(e))}finally{setGradeSaving(false)}
+  }
+
+  async function clearManualGrade(){
+    setGradeSaving(true);setGradeMessage('')
+    try {
+      const {error}=await supabase.from('pp_student_manual_grades').delete().eq('student_id',student.id)
+      if(error)throw error
+      setGradeEditing(false)
+      await onRefresh()
+      setGradeMessage('Note décidée par le professeur retirée.')
+    }catch(e){setGradeMessage(toastError(e))}finally{setGradeSaving(false)}
+  }
+
   async function savePosition(ev, validated_level, teacher_comment=comments[ev.competency_code]??finalMap[ev.competency_code]?.teacher_comment??''){
     setSaving(ev.competency_code)
     const {data:{user}}=await supabase.auth.getUser()
@@ -311,6 +354,20 @@ function StudentSummary({ student, synthesis, evaluations, finalPositions, noteE
         <div className="note-help-example"><b>Exemple : D puis E sur la même compétence</b><div>Toutes les évaluations : <strong>{gradeValue((Number(mapping.D)+Number(mapping.E))/2)}/20</strong></div><div>Dernière évaluation : <strong>{gradeValue(mapping.E)}/20</strong></div></div>
         <div className="note-help-active">Mode actuel : <b>{synthesisMode==='all_evaluations'?'Toutes les évaluations':'Dernière évaluation par compétence'}</b></div>
         <p className="note-help-footer">Cette note est indicative : la validation finale reste à l’enseignant.</p>
+      </div>}
+    </div><div className="summary-card manual-grade-card">
+      <span>Note décidée par le professeur</span>
+      <strong className="manual-grade-display">{manualGrade?.grade==null?'—':Number(manualGrade.grade).toFixed(1)+' / 20'}</strong>
+      <small>{manualGrade?.grade==null?'Aucune note définie':"Note fixée manuellement — indépendante du calcul"}</small>
+      {!readOnly&&<div className="manual-grade-controls no-print">
+        {!gradeEditing
+          ?<button type="button" className="manual-grade-action" onClick={()=>{setGradeDraft(manualGrade?.grade==null?'':String(manualGrade.grade).replace('.',','));setGradeMessage('');setGradeEditing(true)}}>{manualGrade?.grade==null?'Définir une note':'Modifier la note'}</button>
+          :<div className="manual-grade-editor">
+            <label htmlFor="manual-grade-entry">Note sur 20</label>
+            <div className="manual-grade-input-row"><input id="manual-grade-entry" type="text" inputMode="decimal" autoComplete="off" value={gradeDraft} placeholder="Ex. 16,5" disabled={gradeSaving} onChange={e=>setGradeDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();if(!gradeSaving)saveManualGrade()}}}/><span>/ 20</span></div>
+            <div className="manual-grade-actions"><button type="button" className="manual-grade-action primary" disabled={gradeSaving} onClick={saveManualGrade}>{gradeSaving?'Enregistrement…':'Enregistrer'}</button><button type="button" className="manual-grade-action quiet" disabled={gradeSaving} onClick={()=>{setGradeEditing(false);setGradeMessage('')}}>Annuler</button>{manualGrade?.grade!=null&&<button type="button" className="manual-grade-action quiet remove" disabled={gradeSaving} onClick={clearManualGrade}>Retirer</button>}</div>
+          </div>}
+        {gradeMessage&&<div className="manual-grade-message" role="status">{gradeMessage}</div>}
       </div>}
     </div><div className="summary-card"><span>Compétences évaluées</span><strong>{synthesis.latest.length}</strong><small>{synthesisMode==='all_evaluations'?`${synthesis.evaluated} évaluation(s) prise(s) en compte`:'Dernier positionnement par compétence'}</small></div><div className="summary-card"><span>Niveau dominant</span><strong>{synthesis.dominant}</strong><small>{LEVELS.find(l=>l.code===synthesis.dominant)?.label||'Non évalué'}</small></div></div>
     <div className="panel"><div className="panel-head"><div><h3>Synthèse par bloc</h3><p>Moyenne indicative issue des évaluations.</p></div></div><div className="group-bars">{Object.entries(GROUP_LABELS).map(([g,label])=>{const v=synthesis.groupAverages[g];return <div key={g} className="group-bar"><div><strong>{g}</strong><span>{label}</span></div><div className="bar-track"><div className="bar-fill" style={{width:`${v==null?0:v*5}%`}}/></div><b>{v==null?'—':v.toFixed(1)}</b></div>})}</div></div>
