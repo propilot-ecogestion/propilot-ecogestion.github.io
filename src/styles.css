@@ -392,3 +392,11 @@
   .academy-brand.propilot-institutional-brand img{display:block;width:44px;height:48px}
   .academy-brand.propilot-institutional-brand span{display:none}
 }
+
+/* ProPilot original logo: ensure tiny image remains visible and crisp. */
+.reference-class-header .academy-brand.propilot-institutional-brand img{display:block;width:64px;height:64px;max-width:none;object-fit:contain;object-position:center}
+@media(max-width:700px){
+  .reference-class-header .institutional-identity:has(.propilot-institutional-brand){display:flex;align-items:center;gap:8px;margin:0 0 10px}
+  .reference-class-header .academy-brand.propilot-institutional-brand img{display:block;width:42px;height:42px}
+  .reference-class-header .institutional-identity:has(.propilot-institutional-brand) .establishment-identity,.reference-class-header .institutional-identity:has(.propilot-institutional-brand) .institutional-divider{display:none}
+}
