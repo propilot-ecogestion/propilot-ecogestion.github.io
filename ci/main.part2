@@ -176,6 +176,7 @@ function ImportStudentsModal({klass,onClose,onImported}) {
   const [preview,setPreview]=useState([])
   const [existing,setExisting]=useState([])
   const [skipped,setSkipped]=useState([])
+  const [invalidRows,setInvalidRows]=useState([])
   const [error,setError]=useState('')
   const [busy,setBusy]=useState(false)
   useEffect(()=>{supabase.from('pp_students').select('last_name,first_name,email').eq('class_id',klass.id).then(({data})=>setExisting(data||[]))},[klass.id])
@@ -184,7 +185,7 @@ function ImportStudentsModal({klass,onClose,onImported}) {
     return existing.some(s=>(email&&s.email?.trim().toLowerCase()===email)||(!email&&s.last_name?.trim().toLowerCase()===row.last_name.trim().toLowerCase()&&s.first_name?.trim().toLowerCase()===row.first_name.trim().toLowerCase()))
   }
   function parseFile(file){
-    setError('');setSkipped([])
+    setError('');setSkipped([]);setInvalidRows([])
     const reader=new FileReader()
     reader.onload=()=>{
       const text=String(reader.result||'').replace(/^\uFEFF/,'')
@@ -196,6 +197,7 @@ function ImportStudentsModal({klass,onClose,onImported}) {
       const body=hasHeader?rows.slice(1):rows
       const idx=(names, fallback)=>{const i=header.findIndex(h=>names.includes(h));return i>=0?i:fallback}
       const ni=hasHeader?idx(['nom','last_name'],0):0, pi=hasHeader?idx(['prenom','prénom','first_name'],1):1, gi=hasHeader?idx(['groupe','group','group_name'],2):2, ei=hasHeader?idx(['email','e-mail','mail'],3):3
+      setInvalidRows(body.map((r,i)=>(!String(r[ni]||'').trim()||!String(r[pi]||'').trim())?`Ligne ${i+(hasHeader?2:1)} ignorée : nom ou prénom manquant.`:null).filter(Boolean))
       const parsed=body.filter(r=>r[ni]&&r[pi]).map(r=>({last_name:r[ni].toUpperCase(),first_name:r[pi],group_name:r[gi]||null,email:r[ei]||null,access_enabled:false,class_id:klass.id}))
       const seen=new Set(),keep=[],skip=[]
       for(const row of parsed){
@@ -215,7 +217,7 @@ function ImportStudentsModal({klass,onClose,onImported}) {
     setBusy(false)
     if(error)setError(toastError(error)); else onImported()
   }
-  return <Modal title="Importer des élèves (CSV)" onClose={onClose}><div className="stack"><p className="muted">Colonnes acceptées : <strong>nom ; prénom ; groupe ; email</strong>. Les doublons évidents sont ignorés avant l’import.</p><input type="file" accept=".csv,text/csv" onChange={e=>e.target.files?.[0]&&parseFile(e.target.files[0])}/>{error&&<div className="form-message">{error}</div>}{(preview.length>0||skipped.length>0)&&<><div className="preview-box"><strong>{preview.length} élève(s) à importer</strong>{preview.slice(0,6).map((r,i)=><span key={i}>{r.last_name} {r.first_name} {r.group_name?`— ${r.group_name}`:''}</span>)}{preview.length>6&&<span>…</span>}{skipped.length>0&&<span className="muted">{skipped.length} doublon(s) ignoré(s).</span>}</div><div className="modal-actions"><button className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary" disabled={busy||!preview.length} onClick={importRows}><Upload/>{busy?'Import…':`Importer ${preview.length}`}</button></div></>}</div></Modal>
+  return <Modal title="Importer des élèves (CSV)" onClose={onClose}><div className="stack"><p className="muted">Colonnes acceptées : <strong>nom ; prénom ; groupe ; email</strong>. Les doublons évidents sont ignorés avant l’import.</p><input type="file" accept=".csv,text/csv" onChange={e=>e.target.files?.[0]&&parseFile(e.target.files[0])}/>{error&&<div className="form-message">{error}</div>}{invalidRows.length>0&&<div className="form-message" role="alert"><strong>{invalidRows.length} ligne(s) incomplète(s) ignorée(s) :</strong><ul>{invalidRows.slice(0,10).map((reason,i)=><li key={i}>{reason}</li>)}</ul></div>}{(preview.length>0||skipped.length>0)&&<><div className="preview-box"><strong>{preview.length} élève(s) à importer</strong>{preview.slice(0,6).map((r,i)=><span key={i}>{r.last_name} {r.first_name} {r.group_name?`— ${r.group_name}`:''}</span>)}{preview.length>6&&<span>…</span>}{skipped.length>0&&<span className="muted">{skipped.length} doublon(s) ignoré(s).</span>}</div><div className="modal-actions"><button className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary" disabled={busy||!preview.length} onClick={importRows}><Upload/>{busy?'Import…':`Importer ${preview.length}`}</button></div></>}</div></Modal>
 }
 
 function StudentDetail({ klass, student, readOnly=false, initialEdit=false, onBack }) {
