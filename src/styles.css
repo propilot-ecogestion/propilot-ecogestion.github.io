@@ -383,20 +383,6 @@
 .note-help-active{margin-top:9px;font-size:12px;color:#1d4ed8}
 .note-help-popover .note-help-footer{font-size:12px;color:#64748b;margin-bottom:0}
 
-
-/* En-tête classe : logo ProPilot vectoriel validé à la place de l'ancien logo académique. */
-.academy-brand.propilot-institutional-brand{flex:none}
-.academy-brand.propilot-institutional-brand img{display:block;width:58px;height:62px;object-fit:contain;object-position:center;background:transparent}
-.academy-brand.propilot-institutional-brand span{display:none}
-@media(max-width:700px){
-  .academy-brand.propilot-institutional-brand img{display:block;width:44px;height:48px}
-  .academy-brand.propilot-institutional-brand span{display:none}
-}
-
-/* ProPilot original logo: ensure tiny image remains visible and crisp. */
-.reference-class-header .academy-brand.propilot-institutional-brand img{display:block;width:64px;height:64px;max-width:none;object-fit:contain;object-position:center}
-@media(max-width:700px){
-  .reference-class-header .institutional-identity:has(.propilot-institutional-brand){display:flex;align-items:center;gap:8px;margin:0 0 10px}
-  .reference-class-header .academy-brand.propilot-institutional-brand img{display:block;width:42px;height:42px}
-  .reference-class-header .institutional-identity:has(.propilot-institutional-brand) .establishment-identity,.reference-class-header .institutional-identity:has(.propilot-institutional-brand) .institutional-divider{display:none}
-}
+/* Identité de ProPilot dans le bandeau latéral (logo approuvé, haute définition). */
+.sidebar .logo .sidebar-propilot-logo{display:block;width:50px;height:50px;flex:0 0 50px;object-fit:contain;object-position:center;border-radius:8px}
+@media(max-width:900px){.sidebar .logo .sidebar-propilot-logo{width:44px;height:44px;flex-basis:44px}}
