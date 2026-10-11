@@ -473,7 +473,9 @@ function Dashboard({ classes, pendingInvites=[], onAcceptInvite, onDeclineInvite
 
   function classCard(c){
     const archived=c.status==='archived'
-    return <button key={c.id} className={`class-card ${archived?'archived-card':''}`} onClick={()=>onOpenClass(c)}><div className="class-card-top"><div className="row"><span className="class-pill">{c.pp_diploma_packs?.short_name || c.diploma_code}</span>{archived&&<span className="badge muted"><Archive size={13}/> Archivée</span>}</div><ChevronRight/></div><h3>{c.name}</h3><p>{c.level_label} • {c.school_year}</p><small>Organisation : {c.organization_mode}</small></button>
+    const diplomaThemes={MCVA:'mcva',MCVB:'mcvb',AGORA:'agora',ACCUEIL:'accueil',EPC:'epc','2MRC':'mrc'}
+    const theme=diplomaThemes[c.diploma_code]||'other'
+    return <button key={c.id} className={`class-card diploma-card diploma-${theme} ${archived?'archived-card':''}`} onClick={()=>onOpenClass(c)}><div className="class-card-top"><div className="row"><span className="class-pill">{c.pp_diploma_packs?.short_name || c.diploma_code}</span>{archived&&<span className="badge muted"><Archive size={13}/> Archivée</span>}</div><ChevronRight/></div><h3>{c.name}</h3><p>{c.level_label} • {c.school_year}</p><small>Organisation : {c.organization_mode}</small></button>
   }
 
   return (
