@@ -5,7 +5,7 @@ import {
   GraduationCap, Users, BookOpenCheck, ClipboardCheck, LogOut, Plus, ShieldCheck,
   Clock3, ChevronRight, School, LayoutDashboard, Search, Save, UserCheck, Settings,
   BriefcaseBusiness, FileText, Upload, Download, Trash2, Pencil, X, ArrowLeft,
-  BarChart3, CheckCircle2, AlertCircle, UserPlus, Printer, RotateCcw, FolderOpen,
+  BarChart3, CheckCircle2, AlertCircle, Info, UserPlus, Printer, RotateCcw, FolderOpen,
   Eye, EyeOff, BellRing, SlidersHorizontal, ListChecks, CalendarDays, Target, Sparkles, Archive, Copy, Maximize2, Minimize2
 } from 'lucide-react'
 import SetupWizard from './SetupWizard'
