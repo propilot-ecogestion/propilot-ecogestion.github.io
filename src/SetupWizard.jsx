@@ -19,6 +19,7 @@ export default function SetupWizard({onClose,onCreated}){
   const [step2Clicks,setStep2Clicks]=useState(0)
   const [studentsFile,setStudentsFile]=useState(null)
   const [studentsPreview,setStudentsPreview]=useState([])
+  const [importWarnings,setImportWarnings]=useState([])
   const [currentEmail,setCurrentEmail]=useState('')
 
   useEffect(()=>{init()},[])
@@ -104,12 +105,23 @@ export default function SetupWizard({onClose,onCreated}){
     const headers=rows[0].map(x=>clean(x).toLowerCase())
     const idx=names=>headers.findIndex(h=>names.some(n=>h.includes(n)))
     const iNom=idx(['nom','last_name']),iPrenom=idx(['prénom','prenom','first_name']),iGroupe=idx(['groupe','group']),iEmail=idx(['mail','email','e-mail'])
-    const parsed=rows.slice(1).map(cols=>({last_name:clean(cols[iNom>=0?iNom:0]).toUpperCase(),first_name:clean(cols[iPrenom>=0?iPrenom:1]),group_name:iGroupe>=0?clean(cols[iGroupe])||null:null,email:iEmail>=0?normalizeEmail(cols[iEmail])||null:null})).filter(x=>x.last_name&&x.first_name)
+    const warnings=[]
+    const seen=new Set()
+    const parsed=[]
+    rows.slice(1).forEach((cols,i)=>{
+      const row={last_name:clean(cols[iNom>=0?iNom:0]).toUpperCase(),first_name:clean(cols[iPrenom>=0?iPrenom:1]),group_name:iGroupe>=0?clean(cols[iGroupe])||null:null,email:iEmail>=0?normalizeEmail(cols[iEmail])||null:null}
+      if(!row.last_name||!row.first_name){warnings.push(`Ligne ${i+2} ignorée : nom ou prénom manquant.`);return}
+      const key=row.email?`email:${row.email}`:`name:${row.last_name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()}|${row.first_name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()}`
+      if(seen.has(key)){warnings.push(`Ligne ${i+2} ignorée : élève en doublon (${row.first_name} ${row.last_name}).`);return}
+      seen.add(key);parsed.push(row)
+    })
+    if(parsed.length>200)warnings.push(`${parsed.length-200} élève(s) au-delà de la limite de 200 non importés.`)
+    setImportWarnings(warnings)
     setStudentsPreview(parsed.slice(0,200))
   }
 
   function parseStudents(file){
-    setStudentsFile(file);setMessage('')
+    setStudentsFile(file);setMessage('');setImportWarnings([])
     if(!file){setStudentsPreview([]);return}
     const ext=file.name.split('.').pop()?.toLowerCase()
     const r=new FileReader()
@@ -216,6 +228,7 @@ export default function SetupWizard({onClose,onCreated}){
         {step===6&&<div className="setup-section"><div className="setup-summary"><CheckCircle2/><div><h3>Votre boîte à outils est prête à être créée</h3><p>La classe sera vide de vos données pédagogiques personnelles, mais le bon référentiel, les périodes P1 à P7, les transversalités économie-droit et les épreuves correspondant au diplôme sont déjà disponibles.</p></div></div><div className="summary-list"><div><span>Établissement</span><b>{draft.establishment_name} — {draft.establishment_city}</b></div><div><span>Classe</span><b>{draft.class_name} • {draft.level_label} • {draft.school_year}</b></div><div><span>Diplôme</span><b>{packs.find(p=>p.code===draft.diploma_code)?.short_name||draft.diploma_code}</b></div><div><span>Organisation</span><b>{draft.organization_mode} • {collaborators().length} collègue(s) invité(s)</b></div><div><span>PFMP</span><b>{pfmps().length} période(s)</b></div><div><span>Élèves à importer</span><b>{studentsPreview.length}</b></div></div></div>}
 
         
+        {step>=5&&importWarnings.length>0&&<div className="form-message" role="alert"><strong>{importWarnings.length} ligne(s) non importée(s) :</strong><ul>{importWarnings.slice(0,12).map((warning,i)=><li key={i}>{warning}</li>)}</ul>{importWarnings.length>12&&<p>Et {importWarnings.length-12} autre(s) ligne(s).</p>}</div>}
         {message&&<div className="form-message">{message}</div>}
         <div className="setup-actions"><button className="btn ghost" onClick={step===1?onClose:back}><ArrowLeft/>{step===1?'Fermer':'Retour'}</button>{step<6?<button className="btn primary" disabled={step!==2&&(busy||!canNext)} type="button" onClick={next}>Continuer <ChevronRight/></button>:<button className="btn primary" disabled={busy} onClick={finalize}><Save/>{busy?'Création…':'Créer la classe'}</button>}</div>
       </section>
