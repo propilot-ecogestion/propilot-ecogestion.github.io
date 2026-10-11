@@ -412,7 +412,7 @@
 @media(max-width:1250px){.summary-layout .summary-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:680px){.summary-layout .summary-cards{grid-template-columns:minmax(0,1fr)}}
 
-/* Tableau de bord : identification harmonisée des formations, une teinte pastel par diplôme. */
+/* Tableau de bord : identification harmonisée des formations, des couleurs plus denses et lumineuses par diplôme. */
 .class-grid .class-card.diploma-card{
   background:var(--diploma-background,#fff);
   border-color:var(--diploma-border,#dfe6ef);
@@ -434,44 +434,44 @@
 }
 .class-grid .class-card.diploma-card:focus-visible{outline:3px solid var(--diploma-accent,#2563eb);outline-offset:3px}
 .class-grid .diploma-mrc{
-  --diploma-background:#eaf8fa;
-  --diploma-border:#b5dfe3;
-  --diploma-accent:#238293;
-  --diploma-pill:#d1eff1;
-  --diploma-text:#135e6a;
+  --diploma-background:#bfe9ed;
+  --diploma-border:#72c5d0;
+  --diploma-accent:#087a92;
+  --diploma-pill:#96d9e2;
+  --diploma-text:#07576c;
 }
 .class-grid .diploma-mcva{
-  --diploma-background:#eef9f2;
-  --diploma-border:#bee4cc;
-  --diploma-accent:#35865b;
-  --diploma-pill:#d9f1e2;
-  --diploma-text:#1b6a45;
+  --diploma-background:#c6ebd2;
+  --diploma-border:#83cca0;
+  --diploma-accent:#16834b;
+  --diploma-pill:#a3dfb8;
+  --diploma-text:#105b37;
 }
 .class-grid .diploma-mcvb{
-  --diploma-background:#fff5eb;
-  --diploma-border:#f2d6b7;
-  --diploma-accent:#c07a2d;
-  --diploma-pill:#ffe6cb;
-  --diploma-text:#8f5214;
+  --diploma-background:#ffdbb9;
+  --diploma-border:#eeae73;
+  --diploma-accent:#c66d19;
+  --diploma-pill:#ffc78f;
+  --diploma-text:#884506;
 }
 .class-grid .diploma-agora{
-  --diploma-background:#eff4ff;
-  --diploma-border:#c3d2f7;
-  --diploma-accent:#4c6db9;
-  --diploma-pill:#dae6ff;
-  --diploma-text:#32549c;
+  --diploma-background:#cbdcff;
+  --diploma-border:#91aeef;
+  --diploma-accent:#3866cb;
+  --diploma-pill:#adc6fb;
+  --diploma-text:#244b9b;
 }
 .class-grid .diploma-accueil{
-  --diploma-background:#f6f1ff;
-  --diploma-border:#ddcef6;
-  --diploma-accent:#8662b4;
-  --diploma-pill:#eaddfa;
-  --diploma-text:#654295;
+  --diploma-background:#e3d3f8;
+  --diploma-border:#b699e6;
+  --diploma-accent:#7f4ac1;
+  --diploma-pill:#cdb2ed;
+  --diploma-text:#5d2c94;
 }
 .class-grid .diploma-epc{
-  --diploma-background:#fff1f3;
-  --diploma-border:#f1c9d2;
-  --diploma-accent:#c06880;
-  --diploma-pill:#ffe0e8;
-  --diploma-text:#954358;
+  --diploma-background:#ffd2df;
+  --diploma-border:#ee9cb4;
+  --diploma-accent:#be426e;
+  --diploma-pill:#ffb4ca;
+  --diploma-text:#912e55;
 }
