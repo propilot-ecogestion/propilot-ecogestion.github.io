@@ -178,6 +178,7 @@ function ImportStudentsModal({klass,onClose,onImported}) {
   const [skipped,setSkipped]=useState([])
   const [importWarnings,setImportWarnings]=useState([])
   const [fileName,setFileName]=useState('')
+  const [importSource,setImportSource]=useState(null)
   const [error,setError]=useState('')
   const [busy,setBusy]=useState(false)
 
@@ -188,6 +189,7 @@ function ImportStudentsModal({klass,onClose,onImported}) {
     setSkipped([])
     setImportWarnings([])
     setPreview([])
+    setImportSource(null)
     setFileName(file?.name||'')
     if(!file)return
     if(file.size>20*1024*1024){
@@ -231,6 +233,7 @@ function ImportStudentsModal({klass,onClose,onImported}) {
         added.push({...student,class_id:klass.id,access_enabled:false})
       }
       setPreview(added)
+      setImportSource(result.source||null)
       setSkipped(duplicates)
       setImportWarnings(result.warnings||[])
       if(!added.length&&!duplicates.length)setError('Aucun élève exploitable dans ce fichier.')
@@ -264,9 +267,10 @@ function ImportStudentsModal({klass,onClose,onImported}) {
 
   return <Modal title="Importer des élèves (tableur ou CSV)" onClose={onClose}>
     <div className="stack">
-      <p className="muted">Formats pris en charge : <strong>Excel (.xlsx, .xls, .xlsm, .xlsb), LibreOffice (.ods), CSV, TSV, texte délimité</strong>. Colonnes demandées : <strong>Nom</strong>, <strong>Prénom</strong> et <strong>Mail (facultatif)</strong>. Une colonne unique <strong>Élève</strong>, contenant le nom et le prénom, est également reconnue. Vérifiez et corrigez directement dans l’aperçu les séparations proposées. Les autres colonnes sont ignorées et les doublons écartés.</p>
+      <p className="muted">Formats pris en charge : <strong>Excel (.xlsx, .xls, .xlsm, .xlsb), LibreOffice (.ods), CSV, TSV, texte délimité</strong>. Colonnes demandées : <strong>Nom</strong>, <strong>Prénom</strong> et <strong>Mail (facultatif)</strong>. Une colonne unique <strong>Élève</strong>, contenant le nom et le prénom, est également reconnue, notamment dans les exports CSV Pronote. Vérifiez et corrigez directement dans l’aperçu les séparations proposées. Les autres colonnes sont ignorées et les doublons écartés.</p>
       <input type="file" accept=".xlsx,.xls,.xlsm,.xlsb,.ods,.csv,.tsv,.tab,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.oasis.opendocument.spreadsheet,text/csv,text/tab-separated-values" disabled={busy} onChange={e=>{parseFile(e.target.files?.[0]||null);e.target.value=''}}/>
       {fileName&&<small className="muted">Fichier sélectionné : {fileName}{busy?' — analyse en cours…':''}</small>}
+      {importSource==='pronote'&&<div className="form-message" role="status"><strong>Export Pronote reconnu.</strong> {preview.length+skipped.length} élève(s) détecté(s), dont {preview.concat(skipped).filter(s=>s.email).length} avec mail ; {skipped.length} doublon(s) déjà présents. Seules les colonnes « Élèves » et « Adresse E-mail » ont été exploitées. Vérifiez les noms proposés avant l’import.</div>}
       {error&&<div className="form-message" role="alert">{error}</div>}
       {importWarnings.length>0&&<div className="form-message" role="status">
         <strong>{importWarnings.length} information(s) à vérifier :</strong>
