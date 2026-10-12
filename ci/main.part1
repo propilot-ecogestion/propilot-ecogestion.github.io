@@ -15,7 +15,7 @@ import EvaluationMatrix from './EvaluationMatrix'
 import PfmpInline from './PfmpInline'
 import SynthesisV14 from './SynthesisV14'
 import * as XLSX from 'xlsx'
-import { readStudentsDelimitedText, readStudentsWorkbook } from './studentImport'
+import { readStudentsFromFile, STUDENT_SPREADSHEET_ACCEPT } from './studentImport'
 import './styles.css'
 
 const LEVELS = [
