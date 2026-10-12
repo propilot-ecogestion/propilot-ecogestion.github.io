@@ -22,7 +22,7 @@ const checks=[
   ['import tableurs Excel et ODS dans les classes existantes', main.includes('Importer des élèves (tableur ou CSV)') && main.includes('readStudentsFromFile(file,XLSX)') && main.includes('FileReader')===false],
   ['import classe sans groupe et avec contrôle des doublons', main.includes('const {group_name,...student}=row') && main.includes('doublon(s) ignoré(s)') && !main.includes('Importer des élèves (CSV)')],
   ['sélecteur tableur/CSV sur tablette dans assistant et classe', setup.includes('accept={STUDENT_SPREADSHEET_ACCEPT}') && main.includes('accept={STUDENT_SPREADSHEET_ACCEPT}')],
-  ['lecteur de fichier bien importé dans les deux interfaces', setup.includes('import { readStudentsFromFile, readStudentsDelimitedText, STUDENT_SPREADSHEET_ACCEPT }') && main.includes('import { readStudentsFromFile, STUDENT_SPREADSHEET_ACCEPT }')],
+  ['lecteur de fichier bien importé dans les deux interfaces', setup.includes('import { readStudentsFromFile, readStudentsDelimitedText, STUDENT_SPREADSHEET_ACCEPT }') && main.includes('import { readStudentsFromFile, readStudentsDelimitedText, STUDENT_SPREADSHEET_ACCEPT }')],
   ['secours CSV Android par collage dans les deux imports', setup.includes('importPastedCsv') && main.includes('importPastedCsv') && setup.includes('readStudentsDelimitedText(csvPasteText)') && main.includes('readStudentsDelimitedText(csvPasteText)')],
   ['Excel parser câblé', setup.includes("import * as XLSX from 'xlsx'")],
   ['tableurs courants et CSV acceptés sans groupe', setup.includes('readStudentsFromFile(file,XLSX)') && setup.includes('studentFileStatus') && !setup.includes('<th>Groupe</th>')],
