@@ -555,3 +555,14 @@
 .admin-gmail-test-result.success{background:#effaf4;border-color:#bbebce;color:#166534}
 .admin-gmail-test-result.error{background:#fff2f3;border-color:#f4b4c0;color:#9f1239}
 @media(max-width:700px){.admin-mail-status .btn{max-width:none;flex:1 0 100%}}
+
+/* Aperçus modifiables des listes d'élèves, y compris nom complet dans une seule colonne. */
+.setup-students-preview{max-height:380px;overflow:auto;overscroll-behavior:contain}
+.setup-students-preview table,.student-import-editable-table table{width:100%;border-collapse:collapse;min-width:520px}
+.setup-students-preview td,.student-import-editable-table td{padding:6px;vertical-align:middle}
+.setup-students-preview th,.student-import-editable-table th{text-align:left;white-space:nowrap}
+.setup-students-preview td input,.student-import-editable-table td input{width:100%;min-width:95px;max-width:none;border:1px solid #cbd5e1;border-radius:7px;padding:8px;background:#fff}
+.student-import-editable-table{max-height:330px;overflow:auto;overscroll-behavior:contain;margin-top:10px;border:1px solid #e2e8f0;border-radius:10px}
+.student-import-editable-table th{position:sticky;top:0;z-index:1;background:#f8fafc;padding:9px;border-bottom:1px solid #e2e8f0}
+.student-import-review,.text-warning{color:#92400e;font-weight:750}
+@media(max-width:700px){.setup-students-preview,.student-import-editable-table{max-width:100%;overflow:auto}}
