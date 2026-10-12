@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { supabase } from './supabase'
 import * as XLSX from 'xlsx'
-import { readStudentsFromFile, STUDENT_SPREADSHEET_ACCEPT } from './studentImport'
+import { readStudentsFromFile, readStudentsDelimitedText, STUDENT_SPREADSHEET_ACCEPT } from './studentImport'
 import { School, Upload, BookOpenCheck, Users, CalendarDays, CheckCircle2, ArrowLeft, ChevronRight, Plus, Trash2, Save } from 'lucide-react'
 
 const DEFAULT_MODULES={ccf:true,pfmp:true,reports:true,students:true,synthesis:true,evaluations:true,progression:true,student_portal:true}
@@ -20,6 +20,8 @@ export default function SetupWizard({onClose,onCreated}){
   const [step2Clicks,setStep2Clicks]=useState(0)
   const [studentsFile,setStudentsFile]=useState(null)
   const [studentFileStatus,setStudentFileStatus]=useState('')
+  const [showCsvPaste,setShowCsvPaste]=useState(false)
+  const [csvPasteText,setCsvPasteText]=useState('')
   const [studentsPreview,setStudentsPreview]=useState([])
   const [studentsImportSource,setStudentsImportSource]=useState(null)
   const [importWarnings,setImportWarnings]=useState([])
@@ -130,6 +132,32 @@ export default function SetupWizard({onClose,onCreated}){
     }finally{setBusy(false)}
   }
 
+  function importPastedCsv(){
+    setMessage('')
+    setImportWarnings([])
+    setStudentsImportSource(null)
+    if(!csvPasteText.trim()){
+      setMessage('Collez le contenu du CSV Pronote avant de lancer la lecture.')
+      return
+    }
+    if(csvPasteText.length>2_000_000){
+      setMessage('Le texte est trop volumineux (limite : 2 millions de caractères).')
+      return
+    }
+    try{
+      const parsed=readStudentsDelimitedText(csvPasteText)
+      if(parsed.error||!parsed.students.length)throw new Error(parsed.error||'Aucun élève reconnu.')
+      setStudentsPreview(parsed.students)
+      setStudentsImportSource(parsed.source||null)
+      setImportWarnings(parsed.warnings||[])
+      setStudentFileStatus(parsed.students.length+' élève(s) reconnu(s) depuis le texte collé.')
+      setCsvPasteText('')
+      setShowCsvPaste(false)
+    }catch(error){
+      setMessage('CSV collé non reconnu : '+String(error?.message||error))
+    }
+  }
+
   async function finalize(){
     setBusy(true);setMessage('')
     const validation=collaboratorValidation()
@@ -215,7 +243,7 @@ export default function SetupWizard({onClose,onCreated}){
 
         {step===4&&<div className="setup-section"><h3>Modules de la classe</h3><div className="module-grid">{Object.entries(MODULE_LABELS).filter(([k])=>!(draft.diploma_code==='2MRC'&&k==='ccf')).map(([k,label])=><label className="module-toggle" key={k}><input type="checkbox" checked={draft.enabled_modules?.[k]??true} onChange={e=>setDraft({...draft,enabled_modules:{...(draft.enabled_modules||DEFAULT_MODULES),[k]:e.target.checked}})}/><span>{label}</span></label>)}</div><div className="setup-subhead"><div><h3>Dates PFMP propres à cette classe</h3><p>Ces périodes apparaîtront ensuite dans la progression, comme dans votre version personnelle.</p></div><button className="btn" onClick={addPfmp}><Plus/>Ajouter une PFMP</button></div><div className="pfmp-editor">{pfmps().map((p,i)=><div className="pfmp-row" key={i}><input value={p.label||''} onChange={e=>setPfmp(i,'label',e.target.value)} placeholder={`PFMP ${i+1}`}/><input type="date" value={p.start_date||''} onChange={e=>setPfmp(i,'start_date',e.target.value)}/><input type="date" value={p.end_date||''} onChange={e=>setPfmp(i,'end_date',e.target.value)}/><button className="icon-btn danger-text" onClick={()=>removePfmp(i)}><Trash2/></button></div>)}{!pfmps().length&&<div className="small-empty">Aucune PFMP saisie pour le moment.</div>}</div></div>}
 
-        {step===5&&<div className="setup-section"><p className="lead">L’import est facultatif : vous pourrez aussi ajouter les élèves plus tard dans la classe.</p><div className="setup-import-field"><label htmlFor="setup-student-file">Fichier d’élèves</label><input id="setup-student-file" type="file" accept={STUDENT_SPREADSHEET_ACCEPT} aria-describedby="setup-student-file-help" onClick={e=>{e.currentTarget.value=''}} onChange={e=>{const file=e.currentTarget.files?.item(0)||null;void parseStudents(file)}}/><p className="setup-import-status" role="status" aria-live="polite">{studentFileStatus||'Choisissez un fichier depuis Fichiers ou Téléchargements.'}</p><p id="setup-student-file-help" className="setup-import-hint">Excel, CSV Pronote, LibreOffice • Nom/Prénom ou Élève • Mail facultatif. Sur tablette, ouvrez Fichiers ou Téléchargements.</p></div>{studentsImportSource==='pronote'&&<div className="form-message" role="status"><strong>Export Pronote reconnu.</strong> {studentsPreview.length} élève(s) détecté(s), dont {studentsPreview.filter(s=>s.email).length} avec une adresse e-mail. Seules les colonnes « Élèves » et « Adresse E-mail » sont exploitées. Vérifiez les lignes signalées, puis continuez.</div>}{studentsPreview.length>0&&<div className="table-card setup-students-preview"><table><thead><tr><th>Nom</th><th>Prénom</th><th>Mail (facultatif)</th><th>Vérification</th></tr></thead><tbody>{studentsPreview.map((s,i)=><tr key={i}><td><input aria-label={`Nom élève ${i+1}`} value={s.last_name} onChange={e=>setStudentsPreview(rows=>rows.map((v,j)=>j===i?{...v,last_name:e.target.value.toUpperCase(),_review:null}:v))}/></td><td><input aria-label={`Prénom élève ${i+1}`} value={s.first_name} onChange={e=>setStudentsPreview(rows=>rows.map((v,j)=>j===i?{...v,first_name:e.target.value,_review:null}:v))}/></td><td><input type="email" aria-label={`Mail élève ${i+1} facultatif`} value={s.email||''} onChange={e=>setStudentsPreview(rows=>rows.map((v,j)=>j===i?{...v,email:e.target.value||null}:v))}/></td><td>{!s.last_name.trim()||!s.first_name.trim()?<strong className="text-warning">À compléter</strong>:s._review?<small className="text-warning" title={s._review}>À vérifier</small>:<small>✓</small>}</td></tr>)}</tbody></table><div className="small-empty">{studentsPreview.length} élève(s) détecté(s) • modifiez directement les champs si nécessaire. {studentsPreview.filter(s=>!s.last_name.trim()||!s.first_name.trim()).length>0?'Les lignes sans nom et prénom complets ne seront pas importées.':''}</div></div>}</div>}
+        {step===5&&<div className="setup-section"><p className="lead">L’import est facultatif : vous pourrez aussi ajouter les élèves plus tard dans la classe.</p><div className="setup-import-field"><label htmlFor="setup-student-file">Fichier d’élèves</label><input id="setup-student-file" type="file" accept={STUDENT_SPREADSHEET_ACCEPT} aria-describedby="setup-student-file-help" onClick={e=>{e.currentTarget.value=''}} onChange={e=>{const file=e.currentTarget.files?.item(0)||null;void parseStudents(file)}}/><p className="setup-import-status" role="status" aria-live="polite">{studentFileStatus||'Choisissez un fichier depuis Fichiers ou Téléchargements.'}</p><p id="setup-student-file-help" className="setup-import-hint">Excel, CSV Pronote, LibreOffice • Nom/Prénom ou Élève • Mail facultatif.</p><button type="button" className="setup-csv-fallback-trigger" onClick={()=>setShowCsvPaste(v=>!v)} aria-expanded={showCsvPaste}>Le CSV n’apparaît pas sur Android ? {showCsvPaste?'Masquer':'Importer par copier-coller'}</button>{showCsvPaste&&<div className="setup-csv-paste-panel"><label htmlFor="setup-csv-paste">Contenu CSV Pronote</label><textarea id="setup-csv-paste" rows={5} spellCheck={false} placeholder="Élèves;Adresse E-mail;…&#10;DUPONT Léa;lea@exemple.fr;…" value={csvPasteText} onChange={e=>setCsvPasteText(e.target.value)}/><p>Ouvrez le CSV sur la tablette dans un éditeur de texte, sélectionnez tout, copiez et collez ici. Aucun fichier à joindre.</p><button type="button" className="btn primary" disabled={!csvPasteText.trim()||busy} onClick={importPastedCsv}>Lire les élèves collés</button></div>}</div>{studentsImportSource==='pronote'&&<div className="form-message" role="status"><strong>Export Pronote reconnu.</strong> {studentsPreview.length} élève(s) détecté(s), dont {studentsPreview.filter(s=>s.email).length} avec une adresse e-mail. Seules les colonnes « Élèves » et « Adresse E-mail » sont exploitées. Vérifiez les lignes signalées, puis continuez.</div>}{studentsPreview.length>0&&<div className="table-card setup-students-preview"><table><thead><tr><th>Nom</th><th>Prénom</th><th>Mail (facultatif)</th><th>Vérification</th></tr></thead><tbody>{studentsPreview.map((s,i)=><tr key={i}><td><input aria-label={`Nom élève ${i+1}`} value={s.last_name} onChange={e=>setStudentsPreview(rows=>rows.map((v,j)=>j===i?{...v,last_name:e.target.value.toUpperCase(),_review:null}:v))}/></td><td><input aria-label={`Prénom élève ${i+1}`} value={s.first_name} onChange={e=>setStudentsPreview(rows=>rows.map((v,j)=>j===i?{...v,first_name:e.target.value,_review:null}:v))}/></td><td><input type="email" aria-label={`Mail élève ${i+1} facultatif`} value={s.email||''} onChange={e=>setStudentsPreview(rows=>rows.map((v,j)=>j===i?{...v,email:e.target.value||null}:v))}/></td><td>{!s.last_name.trim()||!s.first_name.trim()?<strong className="text-warning">À compléter</strong>:s._review?<small className="text-warning" title={s._review}>À vérifier</small>:<small>✓</small>}</td></tr>)}</tbody></table><div className="small-empty">{studentsPreview.length} élève(s) détecté(s) • modifiez directement les champs si nécessaire. {studentsPreview.filter(s=>!s.last_name.trim()||!s.first_name.trim()).length>0?'Les lignes sans nom et prénom complets ne seront pas importées.':''}</div></div>}</div>}
 
         {step===6&&<div className="setup-section"><div className="setup-summary"><CheckCircle2/><div><h3>Votre boîte à outils est prête à être créée</h3><p>La classe sera vide de vos données pédagogiques personnelles, mais le bon référentiel, les périodes P1 à P7, les transversalités économie-droit et les épreuves correspondant au diplôme sont déjà disponibles.</p></div></div><div className="summary-list"><div><span>Établissement</span><b>{draft.establishment_name} — {draft.establishment_city}</b></div><div><span>Classe</span><b>{draft.class_name} • {draft.level_label} • {draft.school_year}</b></div><div><span>Diplôme</span><b>{packs.find(p=>p.code===draft.diploma_code)?.short_name||draft.diploma_code}</b></div><div><span>Organisation</span><b>{draft.organization_mode} • {collaborators().length} collègue(s) invité(s)</b></div><div><span>PFMP</span><b>{pfmps().length} période(s)</b></div><div><span>Élèves à importer</span><b>{studentsPreview.filter(s=>s.last_name?.trim()&&s.first_name?.trim()).length}</b></div>{studentsPreview.some(s=>!s.last_name?.trim()||!s.first_name?.trim())&&<div><span>Identités à compléter</span><b>{studentsPreview.filter(s=>!s.last_name?.trim()||!s.first_name?.trim()).length} (vous pourrez les ajouter après la création)</b></div>}</div></div>}
 
