@@ -175,50 +175,116 @@ function AddStudentModal({klass,onClose,onCreated}) {
 
 function ImportStudentsModal({klass,onClose,onImported}) {
   const [preview,setPreview]=useState([])
-  const [existing,setExisting]=useState([])
   const [skipped,setSkipped]=useState([])
-  const [invalidRows,setInvalidRows]=useState([])
+  const [importWarnings,setImportWarnings]=useState([])
+  const [fileName,setFileName]=useState('')
   const [error,setError]=useState('')
   const [busy,setBusy]=useState(false)
-  useEffect(()=>{supabase.from('pp_students').select('last_name,first_name,email').eq('class_id',klass.id).then(({data})=>setExisting(data||[]))},[klass.id])
-  function isDuplicate(row){
-    const email=(row.email||'').trim().toLowerCase()
-    return existing.some(s=>(email&&s.email?.trim().toLowerCase()===email)||(!email&&s.last_name?.trim().toLowerCase()===row.last_name.trim().toLowerCase()&&s.first_name?.trim().toLowerCase()===row.first_name.trim().toLowerCase()))
-  }
-  function parseFile(file){
-    setError('');setSkipped([]);setInvalidRows([])
-    const reader=new FileReader()
-    reader.onload=()=>{
-      const text=String(reader.result||'').replace(/^\uFEFF/,'')
-      const delim=detectCsvDelimiter(text)
-      const rows=parseCsvText(text,delim)
-      if(!rows.length){setError('Fichier vide.');return}
-      const header=rows[0].map(h=>h.trim().toLowerCase())
-      const hasHeader=header.some(h=>['nom','last_name','prenom','prénom','first_name'].includes(h))
-      const body=hasHeader?rows.slice(1):rows
-      const idx=(names, fallback)=>{const i=header.findIndex(h=>names.includes(h));return i>=0?i:fallback}
-      const ni=hasHeader?idx(['nom','last_name'],0):0, pi=hasHeader?idx(['prenom','prénom','first_name'],1):1, gi=hasHeader?idx(['groupe','group','group_name'],2):2, ei=hasHeader?idx(['email','e-mail','mail'],3):3
-      setInvalidRows(body.map((r,i)=>(!String(r[ni]||'').trim()||!String(r[pi]||'').trim())?`Ligne ${i+(hasHeader?2:1)} ignorée : nom ou prénom manquant.`:null).filter(Boolean))
-      const parsed=body.filter(r=>r[ni]&&r[pi]).map(r=>({last_name:r[ni].toUpperCase(),first_name:r[pi],group_name:r[gi]||null,email:r[ei]||null,access_enabled:false,class_id:klass.id}))
-      const seen=new Set(),keep=[],skip=[]
-      for(const row of parsed){
-        const key=row.email?`e:${row.email.toLowerCase()}`:`n:${row.last_name.toLowerCase()}|${row.first_name.toLowerCase()}`
-        if(seen.has(key)||isDuplicate(row)){skip.push(row);continue}
-        seen.add(key);keep.push(row)
-      }
-      setPreview(keep);setSkipped(skip)
-      if(!keep.length&&skip.length)setError('Tous les élèves détectés semblent déjà présents dans la classe.')
+
+  const normalizedName=value=>String(value||'').trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
+
+  async function parseFile(file){
+    setError('')
+    setSkipped([])
+    setImportWarnings([])
+    setPreview([])
+    setFileName(file?.name||'')
+    if(!file)return
+    if(file.size>20*1024*1024){
+      setError('Fichier trop volumineux (20 Mo maximum). Veuillez exporter seulement la liste des élèves.')
+      return
     }
-    reader.readAsText(file,'UTF-8')
-  }
-  async function importRows(){
-    if(!preview.length)return
     setBusy(true)
-    const {error}=await supabase.from('pp_students').insert(preview)
-    setBusy(false)
-    if(error)setError(toastError(error)); else onImported()
+    try{
+      const ext=file.name.split('.').pop()?.toLowerCase()||''
+      if(ext==='numbers')throw new Error('Pour Apple Numbers, exportez au format Excel ou CSV avant l’import.')
+      const buffer=await file.arrayBuffer()
+      let result
+      if(['csv','tsv','tab','txt'].includes(ext)){
+        const bytes=new Uint8Array(buffer)
+        const utf16=bytes[0]===255&&bytes[1]===254
+        let content=new TextDecoder(utf16?'utf-16le':'utf-8').decode(bytes)
+        if(!utf16&&content.includes('\uFFFD'))content=new TextDecoder('windows-1252').decode(bytes)
+        result=readStudentsDelimitedText(content)
+      }else{
+        const workbook=XLSX.read(buffer,{type:'array'})
+        result=readStudentsWorkbook(workbook,XLSX)
+      }
+      if(result.error)throw new Error(result.error)
+      const {data:existing,error:lookupError}=await supabase.from('pp_students')
+        .select('last_name,first_name,email').eq('class_id',klass.id)
+      if(lookupError)throw new Error('Impossible de vérifier les élèves déjà présents : '+toastError(lookupError))
+      const names=new Set((existing||[]).map(row=>normalizedName(row.last_name)+'|'+normalizedName(row.first_name)))
+      const emails=new Set((existing||[]).map(row=>String(row.email||'').trim().toLowerCase()).filter(Boolean))
+      const added=[],duplicates=[]
+      for(const row of result.students){
+        const nameKey=normalizedName(row.last_name)+'|'+normalizedName(row.first_name)
+        const emailKey=String(row.email||'').trim().toLowerCase()
+        if(names.has(nameKey)||(emailKey&&emails.has(emailKey))){
+          duplicates.push(row)
+          continue
+        }
+        names.add(nameKey)
+        if(emailKey)emails.add(emailKey)
+        // Aucun groupe n'est affecté depuis le fichier, même si une colonne existe.
+        const {group_name,...student}=row
+        added.push({...student,class_id:klass.id,access_enabled:false})
+      }
+      setPreview(added)
+      setSkipped(duplicates)
+      setImportWarnings(result.warnings||[])
+      if(!added.length&&!duplicates.length)setError('Aucun élève exploitable dans ce fichier.')
+      if(!added.length&&duplicates.length)setError('Tous les élèves détectés semblent déjà présents dans la classe.')
+    }catch(e){
+      setPreview([])
+      setSkipped([])
+      setImportWarnings([])
+      setError('Import impossible : '+String(e?.message||e))
+    }finally{
+      setBusy(false)
+    }
   }
-  return <Modal title="Importer des élèves (CSV)" onClose={onClose}><div className="stack"><p className="muted">Colonnes acceptées : <strong>nom ; prénom ; groupe ; email</strong>. Les doublons évidents sont ignorés avant l’import.</p><input type="file" accept=".csv,text/csv" onChange={e=>e.target.files?.[0]&&parseFile(e.target.files[0])}/>{error&&<div className="form-message">{error}</div>}{invalidRows.length>0&&<div className="form-message" role="alert"><strong>{invalidRows.length} ligne(s) incomplète(s) ignorée(s) :</strong><ul>{invalidRows.slice(0,10).map((reason,i)=><li key={i}>{reason}</li>)}</ul></div>}{(preview.length>0||skipped.length>0)&&<><div className="preview-box"><strong>{preview.length} élève(s) à importer</strong>{preview.slice(0,6).map((r,i)=><span key={i}>{r.last_name} {r.first_name} {r.group_name?`— ${r.group_name}`:''}</span>)}{preview.length>6&&<span>…</span>}{skipped.length>0&&<span className="muted">{skipped.length} doublon(s) ignoré(s).</span>}</div><div className="modal-actions"><button className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary" disabled={busy||!preview.length} onClick={importRows}><Upload/>{busy?'Import…':`Importer ${preview.length}`}</button></div></>}</div></Modal>
+
+  async function importRows(){
+    if(!preview.length||busy)return
+    setBusy(true)
+    setError('')
+    try{
+      const {error:insertError}=await supabase.from('pp_students').insert(preview)
+      if(insertError)throw insertError
+      onImported()
+    }catch(e){
+      setError('Enregistrement impossible : '+toastError(e))
+    }finally{
+      setBusy(false)
+    }
+  }
+
+  return <Modal title="Importer des élèves (tableur ou CSV)" onClose={onClose}>
+    <div className="stack">
+      <p className="muted">Formats pris en charge : <strong>Excel (.xlsx, .xls, .xlsm, .xlsb), LibreOffice (.ods), CSV, TSV, texte délimité</strong>. Colonnes nécessaires : <strong>Nom</strong> et <strong>Prénom</strong> ; <strong>E-mail</strong> facultatif. Les colonnes supplémentaires, notamment <strong>Groupe</strong>, sont ignorées. Les doublons sont écartés avant l’import.</p>
+      <input type="file" accept=".xlsx,.xls,.xlsm,.xlsb,.ods,.csv,.tsv,.tab,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.oasis.opendocument.spreadsheet,text/csv,text/tab-separated-values" disabled={busy} onChange={e=>{parseFile(e.target.files?.[0]||null);e.target.value=''}}/>
+      {fileName&&<small className="muted">Fichier sélectionné : {fileName}{busy?' — analyse en cours…':''}</small>}
+      {error&&<div className="form-message" role="alert">{error}</div>}
+      {importWarnings.length>0&&<div className="form-message" role="status">
+        <strong>{importWarnings.length} information(s) à vérifier :</strong>
+        <ul>{importWarnings.slice(0,10).map((reason,i)=><li key={i}>{reason}</li>)}</ul>
+        {importWarnings.length>10&&<p>Et {importWarnings.length-10} autre(s) remarque(s).</p>}
+      </div>}
+      {(preview.length>0||skipped.length>0)&&<>
+        <div className="preview-box">
+          <strong>{preview.length} élève(s) à importer</strong>
+          {preview.slice(0,6).map((row,i)=><span key={i}>{row.last_name} {row.first_name}{row.email?' — '+row.email:''}</span>)}
+          {preview.length>6&&<span>…</span>}
+          {skipped.length>0&&<span className="muted">{skipped.length} doublon(s) ignoré(s).</span>}
+        </div>
+        <div className="modal-actions">
+          <button className="btn ghost" onClick={onClose}>Annuler</button>
+          <button className="btn primary" disabled={busy||!preview.length} onClick={importRows}><Upload/>{busy?'Import…':'Importer '+preview.length}</button>
+        </div>
+      </>}
+    </div>
+  </Modal>
 }
 
 function StudentDetail({ klass, student, readOnly=false, initialEdit=false, onBack }) {
