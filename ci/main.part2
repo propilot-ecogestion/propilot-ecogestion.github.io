@@ -178,6 +178,7 @@ function ImportStudentsModal({klass,onClose,onImported}) {
   const [skipped,setSkipped]=useState([])
   const [importWarnings,setImportWarnings]=useState([])
   const [fileName,setFileName]=useState('')
+  const [fileFeedback,setFileFeedback]=useState('')
   const [importSource,setImportSource]=useState(null)
   const [error,setError]=useState('')
   const [busy,setBusy]=useState(false)
@@ -191,27 +192,12 @@ function ImportStudentsModal({klass,onClose,onImported}) {
     setPreview([])
     setImportSource(null)
     setFileName(file?.name||'')
-    if(!file)return
-    if(file.size>20*1024*1024){
-      setError('Fichier trop volumineux (20 Mo maximum). Veuillez exporter seulement la liste des élèves.')
-      return
-    }
+    if(!file){setFileFeedback('Aucun fichier sélectionné. Choisissez votre export Pronote dans Fichiers ou Téléchargements.');return}
+    setFileFeedback('Lecture de « '+file.name+' » en cours…')
     setBusy(true)
     try{
-      const ext=file.name.split('.').pop()?.toLowerCase()||''
-      if(ext==='numbers')throw new Error('Pour Apple Numbers, exportez au format Excel ou CSV avant l’import.')
-      const buffer=await file.arrayBuffer()
-      let result
-      if(['csv','tsv','tab','txt'].includes(ext)){
-        const bytes=new Uint8Array(buffer)
-        const utf16=bytes[0]===255&&bytes[1]===254
-        let content=new TextDecoder(utf16?'utf-16le':'utf-8').decode(bytes)
-        if(!utf16&&content.includes('\uFFFD'))content=new TextDecoder('windows-1252').decode(bytes)
-        result=readStudentsDelimitedText(content)
-      }else{
-        const workbook=XLSX.read(buffer,{type:'array'})
-        result=readStudentsWorkbook(workbook,XLSX)
-      }
+      const result=await readStudentsFromFile(file,XLSX)
+      setFileFeedback(result.students.length+' élève(s) lus. Vérification des doublons dans la classe…')
       if(result.error)throw new Error(result.error)
       const {data:existing,error:lookupError}=await supabase.from('pp_students')
         .select('last_name,first_name,email').eq('class_id',klass.id)
@@ -236,12 +222,14 @@ function ImportStudentsModal({klass,onClose,onImported}) {
       setImportSource(result.source||null)
       setSkipped(duplicates)
       setImportWarnings(result.warnings||[])
+      setFileFeedback(added.length+' élève(s) prêt(s) à importer depuis « '+file.name+' »'+(duplicates.length?' • '+duplicates.length+' déjà présent(s).':'.'))
       if(!added.length&&!duplicates.length)setError('Aucun élève exploitable dans ce fichier.')
       if(!added.length&&duplicates.length)setError('Tous les élèves détectés semblent déjà présents dans la classe.')
     }catch(e){
       setPreview([])
       setSkipped([])
       setImportWarnings([])
+      setFileFeedback('Lecture ou vérification impossible pour « '+file.name+' ».')
       setError('Import impossible : '+String(e?.message||e))
     }finally{
       setBusy(false)
@@ -268,8 +256,8 @@ function ImportStudentsModal({klass,onClose,onImported}) {
   return <Modal title="Importer des élèves (tableur ou CSV)" onClose={onClose}>
     <div className="stack">
       <p className="muted">Formats pris en charge : <strong>Excel (.xlsx, .xls, .xlsm, .xlsb), LibreOffice (.ods), CSV, TSV, texte délimité</strong>. Colonnes demandées : <strong>Nom</strong>, <strong>Prénom</strong> et <strong>Mail (facultatif)</strong>. Une colonne unique <strong>Élève</strong>, contenant le nom et le prénom, est également reconnue, notamment dans les exports CSV Pronote. Vérifiez et corrigez directement dans l’aperçu les séparations proposées. Les autres colonnes sont ignorées et les doublons écartés.</p>
-      <input type="file" accept=".xlsx,.xls,.xlsm,.xlsb,.ods,.csv,.tsv,.tab,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.oasis.opendocument.spreadsheet,text/csv,text/tab-separated-values" disabled={busy} onChange={e=>{parseFile(e.target.files?.[0]||null);e.target.value=''}}/>
-      {fileName&&<small className="muted">Fichier sélectionné : {fileName}{busy?' — analyse en cours…':''}</small>}
+      <input type="file" disabled={busy} aria-label="Choisir un fichier d’élèves" onClick={e=>{e.currentTarget.value=''}} onChange={e=>{const file=e.currentTarget.files?.item(0)||null;void parseFile(file)}}/>
+      <small role="status" aria-live="polite" className="student-import-file-status">{fileFeedback||'Sélectionnez le fichier depuis Fichiers ou Téléchargements (iPad, Android ou ordinateur).'}</small>
       {importSource==='pronote'&&<div className="form-message" role="status"><strong>Export Pronote reconnu.</strong> {preview.length+skipped.length} élève(s) détecté(s), dont {preview.concat(skipped).filter(s=>s.email).length} avec mail ; {skipped.length} doublon(s) déjà présents. Seules les colonnes « Élèves » et « Adresse E-mail » ont été exploitées. Vérifiez les noms proposés avant l’import.</div>}
       {error&&<div className="form-message" role="alert">{error}</div>}
       {importWarnings.length>0&&<div className="form-message" role="status">
