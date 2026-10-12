@@ -10,7 +10,7 @@ const checks=[
   ['nouvelle classe : nouveau brouillon à étape 1',setup.includes('setStep(1)')&&!setup.includes(".is('finalized_class_id',null).order('updated_at'")],
   ['organisation solo/binôme/trinôme', setup.includes("['solo','Seul']") && setup.includes("['binome','Binôme']") && setup.includes("['trinome','Trinôme']")],
   ['adresse académique obligatoire pour les collaborateurs', setup.includes('@ac-aix-marseille.fr')],
-  ['import élèves avec aperçu', setup.includes('studentsPreview') && setup.includes('aperçu limité aux 8 premiers')],
+  ['import élèves avec aperçu', setup.includes('studentsPreview') && setup.includes('modifiez directement les champs si nécessaire')],
   ['PFMP configurables', setup.includes('addPfmp') && setup.includes('Dates PFMP propres à cette classe')],
   ['visite guidée disponible', tour.includes('Découvrir ProPilot') && tour.includes('ProPilot est prêt')],
   ['visite guidée couvre progression', tour.includes('Progression pédagogique')],
