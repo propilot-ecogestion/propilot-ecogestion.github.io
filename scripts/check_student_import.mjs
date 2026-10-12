@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import * as XLSX from 'xlsx'
-import {readStudentsTable,readStudentsWorkbook,readStudentsDelimitedText} from '../src/studentImport.js'
+import {readStudentsTable,readStudentsWorkbook,readStudentsDelimitedText,splitStudentFullName} from '../src/studentImport.js'
 
 function caseCheck(label,fn){
   try{fn();console.log('✓ '+label)}
@@ -93,4 +93,71 @@ caseCheck('CSV Nom ; Prénom ; Mail sans adresse obligatoire',()=>{
   assert.equal(r.students[0].email,null)
   assert.equal(r.students[1].email,'paul@test.fr')
 })
-console.log('\nImport des élèves : 12 scénarios réussis.')
+caseCheck('colonne Élève avec NOM Prénom et noms composés',()=>{
+  const r=readStudentsTable([
+    ['Élève','Mail'],
+    ['DUPONT Jean',''],
+    ['EL ALAOUI Nawel',''],
+    ['RURANGWA Mutesi Dorcas',''],
+    ['BERNARD-MARTIN Anaïs','anais@test.fr']
+  ])
+  assert.equal(r.error,null)
+  assert.equal(r.students.length,4)
+  assert.deepEqual(r.students.map(s=>[s.last_name,s.first_name]),[
+    ['DUPONT','Jean'],['EL ALAOUI','Nawel'],['RURANGWA','Mutesi Dorcas'],['BERNARD-MARTIN','Anaïs']
+  ])
+  assert.equal(r.students[0].email,null)
+})
+caseCheck('colonne Élève inversée : Prénom NOM',()=>{
+  const r=readStudentsTable([['Élève'],['Jean DUPONT'],['Mina EL ALAOUI']])
+  assert.equal(r.students.length,2)
+  assert.deepEqual([r.students[0].last_name,r.students[0].first_name],['DUPONT','Jean'])
+  assert.deepEqual([r.students[1].last_name,r.students[1].first_name],['EL ALAOUI','Mina'])
+})
+caseCheck('colonne Élève avec virgule séparatrice',()=>{
+  const r=readStudentsTable([['Élève'],['DUPONT, Jean'],['Dupont, Jean Marie']])
+  assert.deepEqual([r.students[0].last_name,r.students[0].first_name],['DUPONT','Jean'])
+  assert.equal(r.students[1].first_name,'Jean Marie')
+})
+caseCheck('colonne Élève tout en majuscules : aperçu et avertissement',()=>{
+  const r=readStudentsTable([['Nom Prénom'],['DUPONT JEAN']])
+  assert.equal(r.students.length,1)
+  assert.equal(r.students[0].last_name,'DUPONT')
+  assert.equal(r.students[0].first_name,'JEAN')
+  assert.ok(r.students[0]._review)
+  assert.ok(r.warnings.some(s=>s.includes('vérifiez la séparation')))
+})
+caseCheck('nom complet ambigu : import possible après correction dans aperçu',()=>{
+  const r=readStudentsTable([['Nom et Prénom'],['Martin Pierre']])
+  assert.equal(r.students.length,1)
+  assert.ok(r.students[0]._review)
+  assert.equal(r.error,null)
+})
+caseCheck('prénom absent dans Élève : ligne conservée pour correction',()=>{
+  const r=readStudentsTable([['Élève'],['DUPONT'],['DURAND Léa']])
+  assert.equal(r.students.length,2)
+  assert.equal(r.students[0].first_name,'')
+  assert.ok(r.students[0]._review)
+  assert.equal(r.students[1].first_name,'Léa')
+})
+caseCheck('colonne Élève placée après autres données CSV',()=>{
+  const r=readStudentsDelimitedText('Groupe;Mail;Élève;Autre\nG1;;MOREAU Anaïs;x\nG2;p@test.fr;Paul DURAND;x')
+  assert.equal(r.error,null)
+  assert.equal(r.students.length,2)
+  assert.deepEqual(r.students.map(s=>[s.last_name,s.first_name]),[['MOREAU','Anaïs'],['DURAND','Paul']])
+  assert.ok(r.students.every(s=>s.group_name===null))
+})
+caseCheck('classeur feuille Élève : lecture combinée',()=>{
+  const wb=XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Élève','Mail'],['ACHOUR BELI Aya',''],['ZARA Noeyla','noeyla@test.fr']]),'Liste')
+  const r=readStudentsWorkbook(wb,XLSX)
+  assert.equal(r.students.length,2)
+  assert.equal(r.students[0].last_name,'ACHOUR BELI')
+  assert.equal(r.students[0].first_name,'Aya')
+})
+caseCheck('une seule colonne sans titre : compatible',()=>{
+  const r=readStudentsTable([['DUPONT Jean'],['DURAND Léa']])
+  assert.equal(r.error,null)
+  assert.equal(r.students.length,2)
+})
+console.log('\nImport des élèves : 21 scénarios réussis.')
