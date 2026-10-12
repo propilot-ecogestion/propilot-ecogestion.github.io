@@ -114,7 +114,7 @@ export function readStudentsTable(rows,{limit=200}={}){
   if(students.length>limit)warnings.push((students.length-limit)+' élève(s) au-delà de la limite de '+limit+' non importés.')
   return {students:students.slice(0,limit),warnings,error:null,headerDetected:!!head,source:isPronote?'pronote':null,
     sourceColumns:isPronote?{identity:clean(headerCells[cols.full_name]),email:cols.email===undefined?null:clean(headerCells[cols.email])}:null,
-    ignoredColumns:isPronote?Math.max(0,headerCells.filter(v=>clean(v)).length-1-Number(cols.email!==undefined)):null}
+    ignoredColumns:isPronote?Math.max(0,headerCells.length-1-Number(cols.email!==undefined)):null}
 }
 
 export function readStudentsDelimitedText(text){
