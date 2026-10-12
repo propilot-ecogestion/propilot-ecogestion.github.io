@@ -250,7 +250,9 @@ function ImportStudentsModal({klass,onClose,onImported}) {
     setBusy(true)
     setError('')
     try{
-      const {error:insertError}=await supabase.from('pp_students').insert(preview)
+      const rows=preview.filter(r=>r.last_name?.trim()&&r.first_name?.trim()).map(({_review,...row})=>row)
+      if(!rows.length){setError('Complétez les noms et prénoms avant de lancer l’import.');return}
+      const {error:insertError}=await supabase.from('pp_students').insert(rows)
       if(insertError)throw insertError
       onImported()
     }catch(e){
@@ -262,7 +264,7 @@ function ImportStudentsModal({klass,onClose,onImported}) {
 
   return <Modal title="Importer des élèves (tableur ou CSV)" onClose={onClose}>
     <div className="stack">
-      <p className="muted">Formats pris en charge : <strong>Excel (.xlsx, .xls, .xlsm, .xlsb), LibreOffice (.ods), CSV, TSV, texte délimité</strong>. Colonnes demandées : <strong>Nom</strong>, <strong>Prénom</strong> et <strong>Mail (facultatif)</strong>. Les autres colonnes du fichier sont ignorées. Les doublons sont écartés avant l’import.</p>
+      <p className="muted">Formats pris en charge : <strong>Excel (.xlsx, .xls, .xlsm, .xlsb), LibreOffice (.ods), CSV, TSV, texte délimité</strong>. Colonnes demandées : <strong>Nom</strong>, <strong>Prénom</strong> et <strong>Mail (facultatif)</strong>. Une colonne unique <strong>Élève</strong>, contenant le nom et le prénom, est également reconnue. Vérifiez et corrigez directement dans l’aperçu les séparations proposées. Les autres colonnes sont ignorées et les doublons écartés.</p>
       <input type="file" accept=".xlsx,.xls,.xlsm,.xlsb,.ods,.csv,.tsv,.tab,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.oasis.opendocument.spreadsheet,text/csv,text/tab-separated-values" disabled={busy} onChange={e=>{parseFile(e.target.files?.[0]||null);e.target.value=''}}/>
       {fileName&&<small className="muted">Fichier sélectionné : {fileName}{busy?' — analyse en cours…':''}</small>}
       {error&&<div className="form-message" role="alert">{error}</div>}
@@ -274,13 +276,13 @@ function ImportStudentsModal({klass,onClose,onImported}) {
       {(preview.length>0||skipped.length>0)&&<>
         <div className="preview-box">
           <strong>{preview.length} élève(s) à importer</strong>
-          {preview.slice(0,6).map((row,i)=><span key={i}>{row.last_name} {row.first_name}{row.email?' — '+row.email:''}</span>)}
-          {preview.length>6&&<span>…</span>}
+          <div className="student-import-editable-table"><table><thead><tr><th>Nom</th><th>Prénom</th><th>Mail (facultatif)</th><th>Contrôle</th></tr></thead><tbody>{preview.map((row,i)=><tr key={i}><td><input aria-label={`Nom élève ${i+1}`} value={row.last_name} onChange={e=>setPreview(rows=>rows.map((v,j)=>j===i?{...v,last_name:e.target.value.toUpperCase(),_review:null}:v))}/></td><td><input aria-label={`Prénom élève ${i+1}`} value={row.first_name} onChange={e=>setPreview(rows=>rows.map((v,j)=>j===i?{...v,first_name:e.target.value,_review:null}:v))}/></td><td><input type="email" aria-label={`Mail élève ${i+1} facultatif`} value={row.email||''} onChange={e=>setPreview(rows=>rows.map((v,j)=>j===i?{...v,email:e.target.value||null}:v))}/></td><td>{!row.last_name?.trim()||!row.first_name?.trim()?<span className="student-import-review">À compléter</span>:row._review?<span className="student-import-review" title={row._review}>À vérifier</span>:<span>✓</span>}</td></tr>)}</tbody></table></div>
+          {preview.some(r=>!r.last_name?.trim()||!r.first_name?.trim())&&<span className="student-import-review">Les lignes incomplètes ne seront pas importées : renseignez leurs noms et prénoms.</span>}
           {skipped.length>0&&<span className="muted">{skipped.length} doublon(s) ignoré(s).</span>}
         </div>
         <div className="modal-actions">
           <button className="btn ghost" onClick={onClose}>Annuler</button>
-          <button className="btn primary" disabled={busy||!preview.length} onClick={importRows}><Upload/>{busy?'Import…':'Importer '+preview.length}</button>
+          <button className="btn primary" disabled={busy||!preview.some(r=>r.last_name?.trim()&&r.first_name?.trim())} onClick={importRows}><Upload/>{busy?'Import…':'Importer '+preview.filter(r=>r.last_name?.trim()&&r.first_name?.trim()).length}</button>
         </div>
       </>}
     </div>
