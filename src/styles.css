@@ -566,3 +566,11 @@
 .student-import-editable-table th{position:sticky;top:0;z-index:1;background:#f8fafc;padding:9px;border-bottom:1px solid #e2e8f0}
 .student-import-review,.text-warning{color:#92400e;font-weight:750}
 @media(max-width:700px){.setup-students-preview,.student-import-editable-table{max-width:100%;overflow:auto}}
+
+/* Assistant, étape Élèves : import sobre et lisible sur tablette. */
+.setup-import-field{display:block;width:100%;max-width:760px;box-sizing:border-box;padding:17px 18px;border:1px solid #dbe3ed;border-radius:12px;background:#fff}
+.setup-import-field label{display:block;margin:0 0 11px;color:#1e293b;font-size:14px;font-weight:750}
+.setup-import-field input[type=file]{display:block;box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow:hidden;border:1px solid #cbd5e1;border-radius:9px;padding:9px;background:#f8fafc;color:#475569;font-size:13px}
+.setup-import-field input[type=file]::file-selector-button{border:1px solid #cbd5e1;border-radius:7px;padding:8px 12px;margin-right:12px;background:#fff;color:#1e293b;font-weight:650;cursor:pointer}
+.setup-import-field .setup-import-hint{margin:10px 0 0;color:#64748b;font-size:12px;line-height:1.5;font-weight:400;overflow-wrap:anywhere}
+@media(max-width:700px){.setup-import-field{padding:14px}.setup-import-field input[type=file]{font-size:12px}}
