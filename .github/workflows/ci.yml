@@ -32,6 +32,7 @@ jobs:
           node scripts/check_role_guards.mjs
           node scripts/check_pilot_flow.mjs
           node scripts/check_onboarding_v22.mjs
+          node scripts/check_student_import.mjs
           node scripts/check_student_portal.mjs
           node scripts/check_ccf_dossier.mjs
           node scripts/check_ccf_alerts.mjs
