@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import * as XLSX from 'xlsx'
-import {readStudentsTable,readStudentsWorkbook,readStudentsDelimitedText,splitStudentFullName} from '../src/studentImport.js'
+import {readStudentsTable,readStudentsWorkbook,readStudentsDelimitedText,splitStudentFullName,readStudentsFromFile} from '../src/studentImport.js'
 
 function caseCheck(label,fn){
   try{fn();console.log('✓ '+label)}
@@ -205,4 +205,48 @@ caseCheck('CSV Pronote : colonnes inutiles mal remplies et mails manquants non b
   assert.equal(r.students[0].email,null)
   assert.equal(r.students[1].email,'yannis@exemple.fr')
 })
-console.log('\nImport des élèves : 23 scénarios réussis.')
+async function mobileCheck(label,fn){
+  await fn()
+  console.log('✓ '+label)
+}
+await mobileCheck('tablette : export Pronote CSV à MIME inconnu et sans extension',async()=>{
+  const data='\uFEFFÉlèves;Adresse E-mail;Classe de rattachement\nDUPONT Léa;;T1\nLEROY Adam;adam@test.fr;T1'
+  const file=new Blob([data],{type:'application/octet-stream'})
+  Object.defineProperty(file,'name',{value:'Export Pronote'})
+  const r=await readStudentsFromFile(file,XLSX)
+  assert.equal(r.source,'pronote')
+  assert.equal(r.students.length,2)
+  assert.equal(r.students[0].email,null)
+})
+await mobileCheck('tablette : fichier .csv pris en charge quel que soit son MIME',async()=>{
+  const file=new Blob(['Élèves;Adresse E-mail\nDUPONT Jeanne;jeanne@example.fr'],{type:'application/vnd.ms-excel'})
+  Object.defineProperty(file,'name',{value:'Export CSV.csv'})
+  const r=await readStudentsFromFile(file,XLSX)
+  assert.equal(r.students.length,1)
+  assert.equal(r.students[0].first_name,'Jeanne')
+})
+await mobileCheck('tablette : lecture via FileReader après échec de arrayBuffer',async()=>{
+  const original=globalThis.FileReader
+  const encoded=new TextEncoder().encode('Élèves;Adresse E-mail\nMOREAU Élise;')
+  globalThis.FileReader=class {
+    readAsArrayBuffer(){
+      this.result=encoded.buffer
+      queueMicrotask(()=>this.onload())
+    }
+  }
+  const file={name:'Pronote.csv',size:encoded.length,arrayBuffer:async()=>{throw Error('Provider unavailable')}}
+  try{
+    const r=await readStudentsFromFile(file,XLSX)
+    assert.equal(r.students.length,1)
+    assert.equal(r.students[0].last_name,'MOREAU')
+  }finally{
+    if(original===undefined)delete globalThis.FileReader
+    else globalThis.FileReader=original
+  }
+})
+await mobileCheck('tablette : fichier vide provoque une erreur explicite',async()=>{
+  const f=new Blob([])
+  Object.defineProperty(f,'name',{value:'empty.csv'})
+  await assert.rejects(()=>readStudentsFromFile(f,XLSX),/vide/)
+})
+console.log('\nImport des élèves : 27 scénarios réussis (dont 4 contrôles mobiles).')
