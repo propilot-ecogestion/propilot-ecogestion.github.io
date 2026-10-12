@@ -580,3 +580,11 @@
 .setup-import-status{padding:5px 0}
 .setup-import-field input[type=file]{touch-action:manipulation}
 @media(max-width:900px){.setup-import-field{max-width:100%}.setup-import-field input[type=file]{width:100%;font-size:14px}}
+
+/* Import CSV de secours sur Android : panneau compact, indépendant du sélecteur natif. */
+.setup-csv-fallback-trigger{display:inline-block;align-self:flex-start;margin:10px 0 0;padding:4px 0;background:none;border:0;color:#1d4ed8;font:inherit;font-size:13px;font-weight:650;cursor:pointer;text-align:left;text-decoration:underline;text-underline-offset:3px}
+.setup-csv-paste-panel{display:flex;flex-direction:column;gap:9px;width:100%;max-width:760px;margin:12px 0 0;padding:12px 14px;box-sizing:border-box;border:1px solid #dbe3ed;background:#f8fafc;border-radius:10px}
+.setup-csv-paste-panel label{font-size:13px;font-weight:700;margin:0;color:#1e293b}
+.setup-csv-paste-panel textarea{box-sizing:border-box;width:100%;max-width:100%;min-width:0;height:116px;resize:vertical;padding:9px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;font-size:13px;line-height:1.5}
+.setup-csv-paste-panel p{margin:0;color:#64748b;font-size:12px;line-height:1.5;font-weight:400}
+.setup-csv-paste-panel .btn{align-self:flex-start}
