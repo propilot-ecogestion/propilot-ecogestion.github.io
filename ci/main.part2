@@ -179,25 +179,15 @@ function ImportStudentsModal({klass,onClose,onImported}) {
   const [importWarnings,setImportWarnings]=useState([])
   const [fileName,setFileName]=useState('')
   const [fileFeedback,setFileFeedback]=useState('')
+  const [showCsvPaste,setShowCsvPaste]=useState(false)
+  const [csvPasteText,setCsvPasteText]=useState('')
   const [importSource,setImportSource]=useState(null)
   const [error,setError]=useState('')
   const [busy,setBusy]=useState(false)
 
   const normalizedName=value=>String(value||'').trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
 
-  async function parseFile(file){
-    setError('')
-    setSkipped([])
-    setImportWarnings([])
-    setPreview([])
-    setImportSource(null)
-    setFileName(file?.name||'')
-    if(!file){setFileFeedback('Aucun fichier sélectionné. Choisissez votre export Pronote dans Fichiers ou Téléchargements.');return}
-    setFileFeedback('Lecture de « '+file.name+' » en cours…')
-    setBusy(true)
-    try{
-      const result=await readStudentsFromFile(file,XLSX)
-      setFileFeedback(result.students.length+' élève(s) lus. Vérification des doublons dans la classe…')
+  async function handleParsedStudents(result,sourceLabel){
       if(result.error)throw new Error(result.error)
       const {data:existing,error:lookupError}=await supabase.from('pp_students')
         .select('last_name,first_name,email').eq('class_id',klass.id)
@@ -222,9 +212,53 @@ function ImportStudentsModal({klass,onClose,onImported}) {
       setImportSource(result.source||null)
       setSkipped(duplicates)
       setImportWarnings(result.warnings||[])
-      setFileFeedback(added.length+' élève(s) prêt(s) à importer depuis « '+file.name+' »'+(duplicates.length?' • '+duplicates.length+' déjà présent(s).':'.'))
+      setFileFeedback(added.length+' élève(s) prêt(s) à importer depuis « '+sourceLabel+' »'+(duplicates.length?' • '+duplicates.length+' déjà présent(s).':'.'))
       if(!added.length&&!duplicates.length)setError('Aucun élève exploitable dans ce fichier.')
       if(!added.length&&duplicates.length)setError('Tous les élèves détectés semblent déjà présents dans la classe.')
+  }
+
+  async function importPastedCsv(){
+    setError('')
+    setSkipped([])
+    setPreview([])
+    setImportWarnings([])
+    setImportSource(null)
+    if(!csvPasteText.trim()){
+      setError('Collez le contenu du CSV Pronote avant de lancer la lecture.')
+      return
+    }
+    if(csvPasteText.length>2_000_000){
+      setError('Contenu CSV trop volumineux.')
+      return
+    }
+    setBusy(true)
+    try{
+      const parsed=readStudentsDelimitedText(csvPasteText)
+      await handleParsedStudents(parsed,'texte CSV collé')
+      setCsvPasteText('')
+      setShowCsvPaste(false)
+    }catch(e){
+      setFileFeedback('Impossible de lire le CSV collé.')
+      setError('Import impossible : '+String(e?.message||e))
+    }finally{
+      setBusy(false)
+    }
+  }
+
+  async function parseFile(file){
+    setError('')
+    setSkipped([])
+    setImportWarnings([])
+    setPreview([])
+    setImportSource(null)
+    setFileName(file?.name||'')
+    if(!file){setFileFeedback('Aucun fichier sélectionné. Choisissez votre export Pronote dans Fichiers ou Téléchargements.');return}
+    setFileFeedback('Lecture de « '+file.name+' » en cours…')
+    setBusy(true)
+    try{
+      const result=await readStudentsFromFile(file,XLSX)
+      setFileFeedback(result.students.length+' élève(s) lus. Vérification des doublons dans la classe…')
+      await handleParsedStudents(result,file.name)
     }catch(e){
       setPreview([])
       setSkipped([])
@@ -258,6 +292,8 @@ function ImportStudentsModal({klass,onClose,onImported}) {
       <p className="muted">Formats pris en charge : <strong>Excel (.xlsx, .xls, .xlsm, .xlsb), LibreOffice (.ods), CSV, TSV, texte délimité</strong>. Colonnes demandées : <strong>Nom</strong>, <strong>Prénom</strong> et <strong>Mail (facultatif)</strong>. Une colonne unique <strong>Élève</strong>, contenant le nom et le prénom, est également reconnue, notamment dans les exports CSV Pronote. Vérifiez et corrigez directement dans l’aperçu les séparations proposées. Les autres colonnes sont ignorées et les doublons écartés.</p>
       <input type="file" accept={STUDENT_SPREADSHEET_ACCEPT} disabled={busy} aria-label="Choisir un fichier d’élèves (Excel, CSV Pronote, LibreOffice)" onClick={e=>{e.currentTarget.value=''}} onChange={e=>{const file=e.currentTarget.files?.item(0)||null;void parseFile(file)}}/>
       <small role="status" aria-live="polite" className="student-import-file-status">{fileFeedback||'Sélectionnez le fichier depuis Fichiers ou Téléchargements (iPad, Android ou ordinateur).'}</small>
+      <button type="button" className="setup-csv-fallback-trigger" onClick={()=>setShowCsvPaste(v=>!v)} aria-expanded={showCsvPaste}>Le CSV n’apparaît pas sur Android ? {showCsvPaste?'Masquer':'Importer par copier-coller'}</button>
+      {showCsvPaste&&<div className="setup-csv-paste-panel"><label htmlFor="existing-class-csv-paste">Contenu CSV Pronote</label><textarea id="existing-class-csv-paste" rows={5} spellCheck={false} placeholder="Élèves;Adresse E-mail;…" value={csvPasteText} onChange={e=>setCsvPasteText(e.target.value)}/><p>Ouvrez le CSV dans un éditeur de texte, sélectionnez tout, copiez et collez ici.</p><button type="button" className="btn primary" disabled={busy||!csvPasteText.trim()} onClick={importPastedCsv}>Lire les élèves collés</button></div>}
       {importSource==='pronote'&&<div className="form-message" role="status"><strong>Export Pronote reconnu.</strong> {preview.length+skipped.length} élève(s) détecté(s), dont {preview.concat(skipped).filter(s=>s.email).length} avec mail ; {skipped.length} doublon(s) déjà présents. Seules les colonnes « Élèves » et « Adresse E-mail » ont été exploitées. Vérifiez les noms proposés avant l’import.</div>}
       {error&&<div className="form-message" role="alert">{error}</div>}
       {importWarnings.length>0&&<div className="form-message" role="status">
