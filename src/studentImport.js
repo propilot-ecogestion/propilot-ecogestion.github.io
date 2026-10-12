@@ -1,4 +1,4 @@
-import { parseCsvText } from './csv'
+import { parseCsvText } from './csv.js'
 
 // L'import de l'assistant ne dépend pas des intitulés exacts des colonnes.
 // Le groupe n'est jamais importé, même s'il est présent dans le tableur.
