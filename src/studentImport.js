@@ -142,3 +142,80 @@ export function readStudentsWorkbook(workbook,XLSX){
   if(!best)return {students:[],warnings:[],error:'Aucune feuille ne contient des colonnes Nom / Prénom ou une colonne Élève exploitable.'}
   return {...best,warnings:[...(tabs.length>1?['Feuille utilisée : '+best.name+'.']:[]),...best.warnings]}
 }
+
+
+/**
+ * Lecture compatible tablettes (iPadOS/Safari, Android/Chrome et fichiers
+ * issus de la zone Téléchargements). Ne transmet rien au serveur.
+ * L'extension et le MIME ne sont pas fiables pour les exports Pronote.
+ */
+async function loadStudentFileBuffer(file){
+  if(!file)throw new Error('Aucun fichier sélectionné.')
+  if(file.size===0)throw new Error('Le fichier sélectionné est vide. Téléchargez de nouveau le CSV Pronote.')
+  if(file.size>20*1024*1024)throw new Error('Ce fichier dépasse 20 Mo : exportez uniquement la liste des élèves.')
+  if(typeof file.arrayBuffer==='function'){
+    try{
+      const data=await file.arrayBuffer()
+      if(data?.byteLength>0)return data
+    }catch(error){
+      // Certains fournisseurs iPadOS/Android ne permettent pas arrayBuffer().
+      // FileReader reste utilisable pour des documents téléchargés.
+      if(typeof FileReader==='undefined')throw error
+    }
+  }
+  if(typeof FileReader==='undefined')throw new Error('Ce navigateur ne permet pas la lecture de fichiers. Essayez Safari ou Chrome.')
+  return await new Promise((resolve,reject)=>{
+    const reader=new FileReader()
+    reader.onerror=()=>reject(new Error('Impossible de lire le fichier depuis la tablette. Enregistrez-le dans Téléchargements puis réessayez.'))
+    reader.onabort=()=>reject(new Error('La lecture du fichier a été interrompue.'))
+    reader.onload=()=>resolve(reader.result)
+    try{reader.readAsArrayBuffer(file)}catch{
+      reject(new Error('Fichier non accessible. Téléchargez-le dans le stockage local de la tablette et sélectionnez-le depuis Fichiers.'))
+    }
+  })
+}
+
+function decodeStudentText(data){
+  const bytes=new Uint8Array(data)
+  if(bytes[0]===255&&bytes[1]===254)return new TextDecoder('utf-16le').decode(bytes.subarray(2))
+  if(bytes[0]===254&&bytes[1]===255)return new TextDecoder('utf-16be').decode(bytes.subarray(2))
+  // Exports Pronote : UTF-8 avec BOM. Autres exports : UTF-8 / Windows 1252.
+  let text=new TextDecoder('utf-8').decode(bytes)
+  if(text.includes('\uFFFD')){
+    try{text=new TextDecoder('windows-1252').decode(bytes)}catch{}
+  }
+  return text.replace(/^\uFEFF/,'')
+}
+
+export async function readStudentsFromFile(file,XLSX){
+  const data=await loadStudentFileBuffer(file)
+  const bytes=new Uint8Array(data)
+  const extension=String(file.name||'').split('.').pop().toLowerCase()
+  if(extension==='numbers')throw new Error('Apple Numbers : exportez d’abord le document au format Excel ou CSV.')
+  const textFormat=['csv','tsv','tab','txt'].includes(extension)
+  const knownWorkbook=['xls','xlsx','xlsm','xlsb','ods'].includes(extension)
+  const zipSignature=bytes[0]===80&&bytes[1]===75&&bytes[2]===3&&bytes[3]===4
+  const oleSignature=bytes[0]===208&&bytes[1]===207&&bytes[2]===17&&bytes[3]===224
+  // Détection du contenu même lorsque la tablette renomme ou ne reconnaît
+  // pas l'extension du fichier téléchargé.
+  const looksBinary=zipSignature||oleSignature
+  if(textFormat||(!knownWorkbook&&!looksBinary)){
+    const decoded=decodeStudentText(data)
+    const result=readStudentsDelimitedText(decoded)
+    if(!result.error&&result.students.length)return result
+    if(textFormat)throw new Error(result.error||'Le CSV ne contient aucun élève reconnu.')
+  }
+  try{
+    const book=XLSX.read(data,{type:'array'})
+    return readStudentsWorkbook(book,XLSX)
+  }catch(error){
+    if(looksBinary||knownWorkbook){
+      const text=decodeStudentText(data)
+      if(text.includes(';')||text.includes('\t')){
+        const csv=readStudentsDelimitedText(text)
+        if(!csv.error&&csv.students.length)return csv
+      }
+    }
+    throw new Error('Impossible de décoder ce fichier. Enregistrez-le dans Téléchargements et réessayez, ou exportez en CSV / Excel.')
+  }
+}
