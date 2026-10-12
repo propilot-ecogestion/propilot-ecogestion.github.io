@@ -160,4 +160,49 @@ caseCheck('une seule colonne sans titre : compatible',()=>{
   assert.equal(r.error,null)
   assert.equal(r.students.length,2)
 })
-console.log('\nImport des élèves : 21 scénarios réussis.')
+caseCheck('CSV Pronote natif 16 colonnes : seules Élèves et Adresse E-mail sont exploitées',()=>{
+  const headers=['Élèves','Encouragement/Valorisation','Né(e) le','Sexe','Adresse E-mail',
+    'Entrée','Sortie','','Classe de rattachement','Tuteur','Cnx Ele.','Cnx Resp.',
+    'Option 1','Option 2','Option 3','Régime']
+  const names=Array.from({length:25},(_,i)=>'FAMILLE'+i+' Prénom'+i)
+  names[0]='DUPONT - MARTIN Léa'
+  names[1]='EL ALAOUI Nawel'
+  names[2]='MOREAU Marie Louise'
+  const lines=[headers,...names.map((name,i)=>{
+    const cells=Array(16).fill('')
+    cells[0]=name
+    cells[2]='05/04/2010'
+    cells[3]='Féminin'
+    cells[4]=i<19?'eleve'+i+'@exemple.fr':''
+    cells[5]='01/09/2026'
+    cells[8]='1MCVA'
+    cells[15]='Externe'
+    return cells
+  })].map(row=>row.map(cell=>'"'+String(cell).replaceAll('"','""')+'"').join(';')).join('\r\n')
+  const csv='\uFEFF'+lines
+  const r=readStudentsDelimitedText(csv)
+  assert.equal(r.error,null)
+  assert.equal(r.source,'pronote')
+  assert.equal(r.students.length,25)
+  assert.equal(r.students.filter(student=>student.email).length,19)
+  assert.equal(r.ignoredColumns,14)
+  assert.deepEqual(r.sourceColumns,{identity:'Élèves',email:'Adresse E-mail'})
+  assert.deepEqual([r.students[0].last_name,r.students[0].first_name],['DUPONT - MARTIN','Léa'])
+  assert.deepEqual([r.students[1].last_name,r.students[1].first_name],['EL ALAOUI','Nawel'])
+  assert.deepEqual([r.students[2].last_name,r.students[2].first_name],['MOREAU','Marie Louise'])
+  assert.ok(r.students.every(student=>student.group_name===null))
+  assert.ok(r.students.every(student=>Object.keys(student).every(key=>['last_name','first_name','email','group_name','_review'].includes(key))))
+})
+caseCheck('CSV Pronote : colonnes inutiles mal remplies et mails manquants non bloquants',()=>{
+  const sample=[
+    ['Élèves','Sexe','Adresse E-mail','Classe de rattachement','Cnx Ele.'],
+    ['DURAND Zoé','valeur inconnue','','1MCVA','erreur'],
+    ['LEROY Yannis','','yannis@exemple.fr','','']
+  ]
+  const r=readStudentsDelimitedText(sample.map(row=>row.map(v=>'"'+v+'"').join(';')).join('\n'))
+  assert.equal(r.source,'pronote')
+  assert.equal(r.students.length,2)
+  assert.equal(r.students[0].email,null)
+  assert.equal(r.students[1].email,'yannis@exemple.fr')
+})
+console.log('\nImport des élèves : 23 scénarios réussis.')
