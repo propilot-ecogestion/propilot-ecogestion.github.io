@@ -20,7 +20,7 @@ const checks=[
   ['visite guidée peut être passée', tour.includes('Passer la visite')],
   ['styles visite isolés', css.includes('.tour-overlay') && css.includes('.tour-card')],
   ['Excel parser câblé', setup.includes("import * as XLSX from 'xlsx'")],
-  ['Excel et CSV acceptés', setup.includes('.xlsx,.xls,.csv')],
+  ['tableurs courants et CSV acceptés sans groupe', setup.includes('readStudentsWorkbook') && setup.includes('readStudentsDelimitedText') && !setup.includes('<th>Groupe</th>')],
   ['visite raccordée à l’application', main.includes("import GuidedTour from './GuidedTour'")],
   ['visite mémorisée par professeur', main.includes('propilot-guided-tour-v22:')],
 ]
