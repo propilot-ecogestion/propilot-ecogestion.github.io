@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { supabase } from './supabase'
 import * as XLSX from 'xlsx'
+import { readStudentsDelimitedText, readStudentsWorkbook } from './studentImport'
 import { School, Upload, BookOpenCheck, Users, CalendarDays, CheckCircle2, ArrowLeft, ChevronRight, Plus, Trash2, Save } from 'lucide-react'
 
 const DEFAULT_MODULES={ccf:true,pfmp:true,reports:true,students:true,synthesis:true,evaluations:true,progression:true,student_portal:true}
@@ -99,44 +100,45 @@ export default function SetupWizard({onClose,onCreated}){
   function addPfmp(){setDraft({...draft,pfmp_periods:[...pfmps(),{label:`PFMP ${pfmps().length+1}`,start_date:'',end_date:'',sort_order:(pfmps().length+1)*10}]})}
   function removePfmp(index){setDraft({...draft,pfmp_periods:pfmps().filter((_,i)=>i!==index)})}
 
-  function rowsToStudents(rows){
-    if(!rows.length){setStudentsPreview([]);return}
-    const clean=v=>String(v??'').trim()
-    const headers=rows[0].map(x=>clean(x).toLowerCase())
-    const idx=names=>headers.findIndex(h=>names.some(n=>h.includes(n)))
-    const iNom=idx(['nom','last_name']),iPrenom=idx(['prénom','prenom','first_name']),iGroupe=idx(['groupe','group']),iEmail=idx(['mail','email','e-mail'])
-    const warnings=[]
-    const seen=new Set()
-    const parsed=[]
-    rows.slice(1).forEach((cols,i)=>{
-      const row={last_name:clean(cols[iNom>=0?iNom:0]).toUpperCase(),first_name:clean(cols[iPrenom>=0?iPrenom:1]),group_name:iGroupe>=0?clean(cols[iGroupe])||null:null,email:iEmail>=0?normalizeEmail(cols[iEmail])||null:null}
-      if(!row.last_name||!row.first_name){warnings.push(`Ligne ${i+2} ignorée : nom ou prénom manquant.`);return}
-      const key=row.email?`email:${row.email}`:`name:${row.last_name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()}|${row.first_name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()}`
-      if(seen.has(key)){warnings.push(`Ligne ${i+2} ignorée : élève en doublon (${row.first_name} ${row.last_name}).`);return}
-      seen.add(key);parsed.push(row)
-    })
-    if(parsed.length>200)warnings.push(`${parsed.length-200} élève(s) au-delà de la limite de 200 non importés.`)
-    setImportWarnings(warnings)
-    setStudentsPreview(parsed.slice(0,200))
-  }
-
-  function parseStudents(file){
-    setStudentsFile(file);setMessage('');setImportWarnings([])
-    if(!file){setStudentsPreview([]);return}
-    const ext=file.name.split('.').pop()?.toLowerCase()
-    const r=new FileReader()
-    if(ext==='xlsx'||ext==='xls'){
-      r.onload=()=>{try{const wb=XLSX.read(r.result,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];rowsToStudents(XLSX.utils.sheet_to_json(ws,{header:1,defval:''}))}catch(e){setStudentsPreview([]);setMessage('Impossible de lire ce fichier Excel. Vérifiez le format du classeur.')}}
-      r.readAsArrayBuffer(file);return
+  async function parseStudents(file){
+    setStudentsFile(file)
+    setMessage('')
+    setImportWarnings([])
+    setStudentsPreview([])
+    if(!file)return
+    if(file.size>20*1024*1024){
+      setMessage('Fichier trop volumineux (20 Mo maximum). Exportez uniquement la liste des élèves.')
+      return
     }
-    r.onload=()=>{
-      const lines=String(r.result||'').replace(/^\uFEFF/,'').split(/\r?\n/).filter(x=>x.trim())
-      if(!lines.length){setStudentsPreview([]);return}
-      const delim=lines[0].includes(';')?';':','
-      const clean=v=>String(v||'').replace(/^"|"$/g,'').trim()
-      rowsToStudents(lines.map(line=>line.split(delim).map(clean)))
+    setBusy(true)
+    try{
+      const ext=file.name.split('.').pop()?.toLowerCase()||''
+      if(ext==='numbers'){
+        throw new Error('Pour un fichier Apple Numbers, utilisez Fichier > Exporter vers > Excel ou CSV, puis importez le fichier exporté.')
+      }
+      const buffer=await file.arrayBuffer()
+      let result
+      if(['csv','tsv','tab','txt'].includes(ext)){
+        const bytes=new Uint8Array(buffer)
+        const utf16=bytes[0]===255&&bytes[1]===254
+        let content=new TextDecoder(utf16?'utf-16le':'utf-8').decode(bytes)
+        if(!utf16&&content.includes('\uFFFD'))content=new TextDecoder('windows-1252').decode(bytes)
+        result=readStudentsDelimitedText(content)
+      }else{
+        const book=XLSX.read(buffer,{type:'array'})
+        result=readStudentsWorkbook(book,XLSX)
+      }
+      if(result.error)throw new Error(result.error)
+      setStudentsPreview(result.students)
+      setImportWarnings(result.warnings)
+      if(!result.students.length)setMessage('Aucun élève exploitable dans ce fichier. Les colonnes Nom et Prénom sont nécessaires.')
+    }catch(error){
+      setStudentsPreview([])
+      setImportWarnings([])
+      setMessage('Import impossible : '+String(error?.message||error))
+    }finally{
+      setBusy(false)
     }
-    r.readAsText(file,'utf-8')
   }
 
   async function finalize(){
@@ -224,7 +226,7 @@ export default function SetupWizard({onClose,onCreated}){
 
         {step===4&&<div className="setup-section"><h3>Modules de la classe</h3><div className="module-grid">{Object.entries(MODULE_LABELS).filter(([k])=>!(draft.diploma_code==='2MRC'&&k==='ccf')).map(([k,label])=><label className="module-toggle" key={k}><input type="checkbox" checked={draft.enabled_modules?.[k]??true} onChange={e=>setDraft({...draft,enabled_modules:{...(draft.enabled_modules||DEFAULT_MODULES),[k]:e.target.checked}})}/><span>{label}</span></label>)}</div><div className="setup-subhead"><div><h3>Dates PFMP propres à cette classe</h3><p>Ces périodes apparaîtront ensuite dans la progression, comme dans votre version personnelle.</p></div><button className="btn" onClick={addPfmp}><Plus/>Ajouter une PFMP</button></div><div className="pfmp-editor">{pfmps().map((p,i)=><div className="pfmp-row" key={i}><input value={p.label||''} onChange={e=>setPfmp(i,'label',e.target.value)} placeholder={`PFMP ${i+1}`}/><input type="date" value={p.start_date||''} onChange={e=>setPfmp(i,'start_date',e.target.value)}/><input type="date" value={p.end_date||''} onChange={e=>setPfmp(i,'end_date',e.target.value)}/><button className="icon-btn danger-text" onClick={()=>removePfmp(i)}><Trash2/></button></div>)}{!pfmps().length&&<div className="small-empty">Aucune PFMP saisie pour le moment.</div>}</div></div>}
 
-        {step===5&&<div className="setup-section"><p className="lead">L’import est facultatif : vous pourrez aussi ajouter les élèves plus tard dans la classe.</p><label className="logo-drop"><span>Importer une liste Excel ou CSV</span><input type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" onChange={e=>parseStudents(e.target.files?.[0]||null)}/><small>Colonnes reconnues : Nom, Prénom, Groupe, Email.</small></label>{studentsPreview.length>0&&<div className="table-card setup-students-preview"><table><thead><tr><th>Nom</th><th>Prénom</th><th>Groupe</th><th>Email</th></tr></thead><tbody>{studentsPreview.slice(0,8).map((s,i)=><tr key={i}><td>{s.last_name}</td><td>{s.first_name}</td><td>{s.group_name||'—'}</td><td>{s.email||'—'}</td></tr>)}</tbody></table><div className="small-empty">{studentsPreview.length} élève(s) détecté(s){studentsPreview.length>8?' • aperçu limité aux 8 premiers':''}.</div></div>}</div>}
+        {step===5&&<div className="setup-section"><p className="lead">L’import est facultatif : vous pourrez aussi ajouter les élèves plus tard dans la classe.</p><label className="logo-drop"><span>Importer une liste d’élèves (tableur ou CSV)</span><input type="file" onChange={e=>{const file=e.target.files?.[0]||null;parseStudents(file);e.target.value=''}}/><small>Excel (.xlsx, .xls, .xlsm, .xlsb), LibreOffice (.ods), CSV, TSV et fichiers texte délimités. Ordre des colonnes libre : <strong>Nom, Prénom</strong> et éventuellement <strong>E-mail</strong>. Les autres colonnes sont ignorées ; aucun groupe n’est importé. Pour Apple Numbers, exportez en Excel ou CSV.</small></label>{studentsPreview.length>0&&<div className="table-card setup-students-preview"><table><thead><tr><th>Nom</th><th>Prénom</th><th>E-mail (facultatif)</th></tr></thead><tbody>{studentsPreview.slice(0,8).map((s,i)=><tr key={i}><td>{s.last_name}</td><td>{s.first_name}</td><td>{s.email||'—'}</td></tr>)}</tbody></table><div className="small-empty">{studentsPreview.length} élève(s) détecté(s){studentsPreview.length>8?' • aperçu limité aux 8 premiers':''}.</div></div>}</div>}
 
         {step===6&&<div className="setup-section"><div className="setup-summary"><CheckCircle2/><div><h3>Votre boîte à outils est prête à être créée</h3><p>La classe sera vide de vos données pédagogiques personnelles, mais le bon référentiel, les périodes P1 à P7, les transversalités économie-droit et les épreuves correspondant au diplôme sont déjà disponibles.</p></div></div><div className="summary-list"><div><span>Établissement</span><b>{draft.establishment_name} — {draft.establishment_city}</b></div><div><span>Classe</span><b>{draft.class_name} • {draft.level_label} • {draft.school_year}</b></div><div><span>Diplôme</span><b>{packs.find(p=>p.code===draft.diploma_code)?.short_name||draft.diploma_code}</b></div><div><span>Organisation</span><b>{draft.organization_mode} • {collaborators().length} collègue(s) invité(s)</b></div><div><span>PFMP</span><b>{pfmps().length} période(s)</b></div><div><span>Élèves à importer</span><b>{studentsPreview.length}</b></div></div></div>}
 
