@@ -262,7 +262,7 @@ function ImportStudentsModal({klass,onClose,onImported}) {
 
   return <Modal title="Importer des élèves (tableur ou CSV)" onClose={onClose}>
     <div className="stack">
-      <p className="muted">Formats pris en charge : <strong>Excel (.xlsx, .xls, .xlsm, .xlsb), LibreOffice (.ods), CSV, TSV, texte délimité</strong>. Colonnes nécessaires : <strong>Nom</strong> et <strong>Prénom</strong> ; <strong>E-mail</strong> facultatif. Les colonnes supplémentaires, notamment <strong>Groupe</strong>, sont ignorées. Les doublons sont écartés avant l’import.</p>
+      <p className="muted">Formats pris en charge : <strong>Excel (.xlsx, .xls, .xlsm, .xlsb), LibreOffice (.ods), CSV, TSV, texte délimité</strong>. Colonnes demandées : <strong>Nom</strong>, <strong>Prénom</strong> et <strong>Mail (facultatif)</strong>. Les autres colonnes du fichier sont ignorées. Les doublons sont écartés avant l’import.</p>
       <input type="file" accept=".xlsx,.xls,.xlsm,.xlsb,.ods,.csv,.tsv,.tab,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.oasis.opendocument.spreadsheet,text/csv,text/tab-separated-values" disabled={busy} onChange={e=>{parseFile(e.target.files?.[0]||null);e.target.value=''}}/>
       {fileName&&<small className="muted">Fichier sélectionné : {fileName}{busy?' — analyse en cours…':''}</small>}
       {error&&<div className="form-message" role="alert">{error}</div>}
