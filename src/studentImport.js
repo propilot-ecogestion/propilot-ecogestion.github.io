@@ -1,5 +1,20 @@
 import { parseCsvText } from './csv.js'
 
+/** Uniquement des fichiers d'élèves sous forme de tableur ou de texte CSV.
+ * Extensions + MIME : Android et iPadOS ne reconnaissent pas tous les mêmes types.
+ * Ce filtre évite que le sélecteur mobile se positionne sur Photos/Vidéos.
+ */
+export const STUDENT_SPREADSHEET_ACCEPT = [
+  '.xlsx','.xls','.xlsm','.xlsb','.ods','.csv','.tsv','.tab','.txt',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.ms-excel.sheet.macroEnabled.12',
+  'application/vnd.ms-excel.sheet.binary.macroEnabled.12',
+  'text/csv','text/tab-separated-values','text/plain','application/csv'
+].join(',')
+
+
 // L'import de l'assistant ne dépend pas des intitulés exacts des colonnes.
 // Le groupe n'est jamais importé, même s'il est présent dans le tableur.
 const normalizeHeader=value=>String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')
