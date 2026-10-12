@@ -574,3 +574,9 @@
 .setup-import-field input[type=file]::file-selector-button{border:1px solid #cbd5e1;border-radius:7px;padding:8px 12px;margin-right:12px;background:#fff;color:#1e293b;font-weight:650;cursor:pointer}
 .setup-import-field .setup-import-hint{margin:10px 0 0;color:#64748b;font-size:12px;line-height:1.5;font-weight:400;overflow-wrap:anywhere}
 @media(max-width:700px){.setup-import-field{padding:14px}.setup-import-field input[type=file]{font-size:12px}}
+
+/* Import mobile : état visible immédiatement après sélection du fichier. */
+.setup-import-status,.student-import-file-status{display:block;max-width:100%;margin:9px 0 0;font-size:12px;line-height:1.5;color:#475569;overflow-wrap:anywhere;word-break:normal}
+.setup-import-status{padding:5px 0}
+.setup-import-field input[type=file]{touch-action:manipulation}
+@media(max-width:900px){.setup-import-field{max-width:100%}.setup-import-field input[type=file]{width:100%;font-size:14px}}
