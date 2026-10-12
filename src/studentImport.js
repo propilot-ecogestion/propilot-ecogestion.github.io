@@ -7,9 +7,43 @@ const normalizeHeader=value=>String(value??'').normalize('NFD').replace(/[\u0300
 const clean=value=>String(value??'').trim()
 const normalName=value=>clean(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
 
+// Une colonne « Élève » contient parfois « NOM Prénom » ou « Prénom NOM ».
+// Les noms ambigus restent modifiables dans l'aperçu avant import.
+export function splitStudentFullName(input){
+  const source=clean(input).replace(/\s+/g,' ')
+  if(!source)return {last_name:'',first_name:'',review:'Nom et prénom à renseigner'}
+  const pieces=source.split(/(?:,|;)\s*/).map(clean).filter(Boolean)
+  if(pieces.length===2){
+    const [first,second]=pieces
+    const isUpper=v=>/[\p{L}]/u.test(v)&&v===v.toLocaleUpperCase('fr-FR')
+    const reverse=!isUpper(first)&&isUpper(second)
+    return {last_name:(reverse?second:first).toLocaleUpperCase('fr-FR'),first_name:reverse?first:second,review:null}
+  }
+  const parts=source.split(' ').filter(Boolean)
+  if(parts.length===1)return {last_name:source.toLocaleUpperCase('fr-FR'),first_name:'',review:'Prénom manquant : complétez-le avant l’import'}
+  const upper=v=>/[\p{L}]/u.test(v)&&v===v.toLocaleUpperCase('fr-FR')
+  const firstUpper=upper(parts[0]),lastUpper=upper(parts[parts.length-1])
+  if(firstUpper&&!lastUpper){
+    const boundary=parts.findIndex(part=>!upper(part))
+    return {last_name:parts.slice(0,boundary).join(' ').toLocaleUpperCase('fr-FR'),first_name:parts.slice(boundary).join(' '),review:null}
+  }
+  if(!firstUpper&&lastUpper){
+    const rev=[...parts].reverse()
+    const boundary=rev.findIndex(part=>!upper(part))
+    return {last_name:parts.slice(parts.length-boundary).join(' ').toLocaleUpperCase('fr-FR'),first_name:parts.slice(0,parts.length-boundary).join(' '),review:null}
+  }
+  // Cas sans indice fiable de casse : séparation proposée, à contrôler.
+  if(firstUpper&&lastUpper){
+    return {last_name:parts[0].toLocaleUpperCase('fr-FR'),first_name:parts.slice(1).join(' '),review:'Nom et prénom entièrement en majuscules : vérifiez la séparation'}
+  }
+  // Usage « Prénom Nom », sans garantie : possibilité d'inverser dans l'aperçu.
+  return {last_name:parts.slice(1).join(' ').toLocaleUpperCase('fr-FR'),first_name:parts[0],review:'Ordre des noms incertain : vérifiez la séparation'}
+}
+
 function headerRole(cell){
   const label=normalizeHeader(cell)
   if(!label)return null
+  if(/^(?:eleve|eleves|nom prenom|nom et prenom|prenon nom|prenom nom|identite|identite eleve|nom complet|noms et prenoms|full name|fullname|student|student name|student full name|name and surname|nom de l eleve et prenom)$/.test(label))return 'full_name'
   if(/^(?:prenom|prenoms|first name|firstname|given name|given names|forename|forenames|prenom eleve|prenom de l eleve|prenom usuel)$/.test(label) ||
       /\bprenom\b|\bfirst name\b|\bgiven name\b/.test(label))return 'first_name'
   if(/^(?:nom|noms|last name|lastname|surname|family name|nom de famille|nom de naissance|nom usuel|nom eleve|nom de l eleve)$/.test(label) ||
@@ -26,8 +60,10 @@ export function detectStudentHeaders(rows){
     if(!Array.isArray(cells))return
     const found={}
     cells.forEach((cell,i)=>{const role=headerRole(cell);if(role && found[role]===undefined)found[role]=i})
-    const count=Number(found.last_name!==undefined)+Number(found.first_name!==undefined)+Number(found.email!==undefined)
-    if(found.last_name===undefined||found.first_name===undefined)return
+    const separate=found.last_name!==undefined&&found.first_name!==undefined
+    const combined=found.full_name!==undefined
+    const count=Number(separate)*4+Number(combined)*2+Number(found.email!==undefined)
+    if(!separate&&!combined)return
     if(!best||count>best.score)best={rowIndex,columns:found,score:count}
   })
   return best
@@ -38,20 +74,23 @@ export function readStudentsTable(rows,{limit=200}={}){
   if(!table.length)return {students:[],warnings:[],error:'Le fichier est vide.',headerDetected:false}
   const head=detectStudentHeaders(table)
   const first=table[0].map(headerRole)
-  // En l'absence d'en-têtes, tolérer simplement deux colonnes Nom | Prénom.
-  // Si l'en-tête est incomplet, refuser plutôt que mélanger les identités.
-  if(!head && first.some(Boolean))return {students:[],warnings:[],error:'Impossible de reconnaître les colonnes Nom et Prénom. Elles doivent figurer séparément dans le fichier.',headerDetected:false}
-  if(!head && table[0].length<2)return {students:[],warnings:[],error:'Deux colonnes distinctes (Nom et Prénom) sont nécessaires.',headerDetected:false}
-  const cols=head?.columns||{last_name:0,first_name:1}
+  // Sans en-tête : une seule colonne peut contenir « NOM Prénom ».
+  // Un en-tête incomplet reste signalé pour éviter de prendre « Groupe » pour un prénom.
+  if(!head && first.some(Boolean))return {students:[],warnings:[],error:'Colonnes incomplètes : utilisez « Nom » et « Prénom » ou une seule colonne « Élève ».',headerDetected:false}
+  const cols=head?.columns||(table[0].length===1?{full_name:0}:{last_name:0,first_name:1})
   const offset=head?head.rowIndex+1:0
   const warnings=[],students=[],seenNames=new Set(),seenEmails=new Set()
   table.slice(offset).forEach((cells,i)=>{
-    const last_name=clean(cells[cols.last_name]).toUpperCase()
-    const first_name=clean(cells[cols.first_name])
+    const usesFullName=cols.full_name!==undefined&&(cols.last_name===undefined||cols.first_name===undefined)
+    const fullName=usesFullName?splitStudentFullName(cells[cols.full_name]):null
+    const last_name=usesFullName?fullName.last_name:clean(cells[cols.last_name]).toUpperCase()
+    const first_name=usesFullName?fullName.first_name:clean(cells[cols.first_name])
     const originalEmail=cols.email===undefined?'':clean(cells[cols.email]).toLowerCase()
     let email=originalEmail||null
     const line=i+offset+1
-    if(!last_name||!first_name){warnings.push('Ligne '+line+' ignorée : nom ou prénom manquant.');return}
+    if(!last_name){warnings.push('Ligne '+line+' ignorée : nom manquant.');return}
+    if(!first_name&&!usesFullName){warnings.push('Ligne '+line+' ignorée : prénom manquant.');return}
+    if(fullName?.review)warnings.push('Ligne '+line+' : '+fullName.review+' ('+clean(cells[cols.full_name])+').')
     if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
       warnings.push('Ligne '+line+' : adresse e-mail ignorée car invalide.')
       email=null
@@ -63,7 +102,7 @@ export function readStudentsTable(rows,{limit=200}={}){
     }
     seenNames.add(nameKey)
     if(email)seenEmails.add(email)
-    students.push({last_name,first_name,email,group_name:null})
+    students.push(fullName?.review?{last_name,first_name,email,group_name:null,_review:fullName.review}:{last_name,first_name,email,group_name:null})
   })
   if(students.length>limit)warnings.push((students.length-limit)+' élève(s) au-delà de la limite de '+limit+' non importés.')
   return {students:students.slice(0,limit),warnings,error:null,headerDetected:!!head}
@@ -91,6 +130,6 @@ export function readStudentsWorkbook(workbook,XLSX){
   const best=tabs.filter(tab=>!tab.error).sort((a,b)=>{
     return (Number(b.headerDetected)-Number(a.headerDetected))||(b.students.length-a.students.length)
   })[0]
-  if(!best)return {students:[],warnings:[],error:'Aucune feuille ne contient des colonnes Nom et Prénom exploitables.'}
+  if(!best)return {students:[],warnings:[],error:'Aucune feuille ne contient des colonnes Nom / Prénom ou une colonne Élève exploitable.'}
   return {...best,warnings:[...(tabs.length>1?['Feuille utilisée : '+best.name+'.']:[]),...best.warnings]}
 }
