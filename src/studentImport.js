@@ -22,14 +22,16 @@ export function splitStudentFullName(input){
   const parts=source.split(' ').filter(Boolean)
   if(parts.length===1)return {last_name:source.toLocaleUpperCase('fr-FR'),first_name:'',review:'Prénom manquant : complétez-le avant l’import'}
   const upper=v=>/[\p{L}]/u.test(v)&&v===v.toLocaleUpperCase('fr-FR')
+  const isNameConnector=(word,i,arr)=>/^(?:-|–|—)$/.test(word)&&i>0&&i<arr.length-1&&upper(arr[i-1])&&upper(arr[i+1])
+  const upperSurnamePart=(word,i,arr)=>upper(word)||isNameConnector(word,i,arr)
   const firstUpper=upper(parts[0]),lastUpper=upper(parts[parts.length-1])
   if(firstUpper&&!lastUpper){
-    const boundary=parts.findIndex(part=>!upper(part))
+    const boundary=parts.findIndex((part,i)=>!upperSurnamePart(part,i,parts))
     return {last_name:parts.slice(0,boundary).join(' ').toLocaleUpperCase('fr-FR'),first_name:parts.slice(boundary).join(' '),review:null}
   }
   if(!firstUpper&&lastUpper){
     const rev=[...parts].reverse()
-    const boundary=rev.findIndex(part=>!upper(part))
+    const boundary=rev.findIndex((part,i)=>!upperSurnamePart(part,i,rev))
     return {last_name:parts.slice(parts.length-boundary).join(' ').toLocaleUpperCase('fr-FR'),first_name:parts.slice(0,parts.length-boundary).join(' '),review:null}
   }
   // Cas sans indice fiable de casse : séparation proposée, à contrôler.
@@ -79,6 +81,11 @@ export function readStudentsTable(rows,{limit=200}={}){
   if(!head && first.some(Boolean))return {students:[],warnings:[],error:'Colonnes incomplètes : utilisez « Nom » et « Prénom » ou une seule colonne « Élève ».',headerDetected:false}
   const cols=head?.columns||(table[0].length===1?{full_name:0}:{last_name:0,first_name:1})
   const offset=head?head.rowIndex+1:0
+  const headerCells=head?table[head.rowIndex]:[]
+  // Reconnaissance de l'export élèves Pronote : extraire uniquement l'identité et l'e-mail.
+  const isPronote=Boolean(head&&cols.full_name!==undefined
+    &&normalizeHeader(headerCells[cols.full_name])==='eleves'
+    &&headerCells.some(c=>['classe de rattachement','encouragement valorisation','cnx ele','regime','ne e le'].includes(normalizeHeader(c))))
   const warnings=[],students=[],seenNames=new Set(),seenEmails=new Set()
   table.slice(offset).forEach((cells,i)=>{
     const usesFullName=cols.full_name!==undefined&&(cols.last_name===undefined||cols.first_name===undefined)
@@ -105,7 +112,9 @@ export function readStudentsTable(rows,{limit=200}={}){
     students.push(fullName?.review?{last_name,first_name,email,group_name:null,_review:fullName.review}:{last_name,first_name,email,group_name:null})
   })
   if(students.length>limit)warnings.push((students.length-limit)+' élève(s) au-delà de la limite de '+limit+' non importés.')
-  return {students:students.slice(0,limit),warnings,error:null,headerDetected:!!head}
+  return {students:students.slice(0,limit),warnings,error:null,headerDetected:!!head,source:isPronote?'pronote':null,
+    sourceColumns:isPronote?{identity:clean(headerCells[cols.full_name]),email:cols.email===undefined?null:clean(headerCells[cols.email])}:null,
+    ignoredColumns:isPronote?Math.max(0,headerCells.filter(v=>clean(v)).length-1-Number(cols.email!==undefined)):null}
 }
 
 export function readStudentsDelimitedText(text){
