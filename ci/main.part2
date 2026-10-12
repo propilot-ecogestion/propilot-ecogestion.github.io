@@ -165,11 +165,11 @@ function StudentsTab({ klass, readOnly=false, isPrimaryOwner=false, onClassDelet
 function StatusBadge({ok,children}) { return <span className={ok?'badge success':'badge muted'}>{children}</span> }
 
 function AddStudentModal({klass,onClose,onCreated}) {
-  const [f,setF]=useState({last_name:'',first_name:'',group_name:'',email:'',access_enabled:false})
+  const [f,setF]=useState({last_name:'',first_name:'',email:'',access_enabled:false})
   const [error,setError]=useState('')
   async function submit(e){ e.preventDefault(); const {error}=await supabase.from('pp_students').insert({...f,class_id:klass.id,email:f.email||null}); if(error)setError(toastError(error)); else onCreated() }
   return <Modal title="Ajouter un élève" onClose={onClose}><form className="form-grid" onSubmit={submit}>
-    <label>Nom<input value={f.last_name} onChange={e=>setF({...f,last_name:e.target.value.toUpperCase()})} required/></label><label>Prénom<input value={f.first_name} onChange={e=>setF({...f,first_name:e.target.value})} required/></label><label>Groupe<input value={f.group_name} onChange={e=>setF({...f,group_name:e.target.value})} placeholder="G1, G2…"/></label><label>E-mail élève<input type="email" value={f.email} onChange={e=>setF({...f,email:e.target.value})}/></label><label className="check"><input type="checkbox" checked={f.access_enabled} onChange={e=>setF({...f,access_enabled:e.target.checked})}/>Activer l'espace élève</label>{error&&<div className="form-message">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary">Ajouter</button></div>
+    <label>Nom<input value={f.last_name} onChange={e=>setF({...f,last_name:e.target.value.toUpperCase()})} required/></label><label>Prénom<input value={f.first_name} onChange={e=>setF({...f,first_name:e.target.value})} required/></label><label>Mail (facultatif)<input type="email" value={f.email} onChange={e=>setF({...f,email:e.target.value})}/></label><label className="check"><input type="checkbox" checked={f.access_enabled} onChange={e=>setF({...f,access_enabled:e.target.checked})}/>Activer l'espace élève</label>{error&&<div className="form-message">{error}</div>}<div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary">Ajouter</button></div>
   </form></Modal>
 }
 
