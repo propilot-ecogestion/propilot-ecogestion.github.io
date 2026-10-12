@@ -72,4 +72,25 @@ caseCheck('classeur multi-feuilles sélectionne la feuille élèves',()=>{
   assert.equal(r.students[0].group_name,null)
   assert.equal(r.students[0].first_name,'Lou')
 })
-console.log('\nImport des élèves : 10 scénarios réussis.')
+caseCheck('modèle Nom | Prénom | Mail : colonne Mail vide autorisée',()=>{
+  const wb=XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+    ['Nom','Prénom','Mail'],
+    ['ACHOUR BELI','Aya',''],
+    ['AMAOUCH','Wassila',null],
+    ['AOUED','Ayoub','ayoub@example.fr']
+  ]),'Classe')
+  const r=readStudentsWorkbook(wb,XLSX)
+  assert.equal(r.error,null)
+  assert.equal(r.students.length,3)
+  assert.deepEqual(r.students.map(s=>s.email),[null,null,'ayoub@example.fr'])
+  assert.ok(r.students.every(s=>s.group_name===null))
+})
+caseCheck('CSV Nom ; Prénom ; Mail sans adresse obligatoire',()=>{
+  const r=readStudentsDelimitedText('Nom;Prénom;Mail\nMartin;Nina;\nDUPONT;Paul;paul@test.fr')
+  assert.equal(r.error,null)
+  assert.equal(r.students.length,2)
+  assert.equal(r.students[0].email,null)
+  assert.equal(r.students[1].email,'paul@test.fr')
+})
+console.log('\nImport des élèves : 12 scénarios réussis.')
