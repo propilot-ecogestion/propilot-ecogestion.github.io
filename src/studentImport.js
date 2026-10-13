@@ -202,7 +202,7 @@ async function loadStudentFileBuffer(file){
     }catch(e){firstError=e}
   }
   const label=Number(file.size)===0?'taille indiquée : 0 octet':'lecture indisponible'
-  throw new Error('Fichier sélectionné mais contenu inaccessible ('+label+'). Enregistrez le CSV dans Téléchargements, puis réessayez dans Chrome.'+(firstError?.message?' Détail : '+String(firstError.message):''))
+  throw new Error('Fichier sélectionné mais vide ou contenu inaccessible ('+label+'). Enregistrez le CSV dans Téléchargements, puis réessayez dans Chrome.'+(firstError?.message?' Détail : '+String(firstError.message):''))
 }
 
 function decodeStudentText(data){
