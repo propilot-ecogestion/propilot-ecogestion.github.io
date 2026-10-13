@@ -1,5 +1,12 @@
 import { parseCsvText } from './csv.js'
 
+// Sur Android Chrome, le choix « Photos et vidéos » peut ouvrir le
+// gestionnaire de fichiers (libellé trompeur du sélecteur natif Chrome).
+export const IS_ANDROID_CHROME = typeof navigator !== 'undefined'
+  && /Android/i.test(navigator.userAgent)
+  && /Chrome\//i.test(navigator.userAgent)
+  && !/EdgA\/|OPR\/|SamsungBrowser\//i.test(navigator.userAgent)
+
 /** Uniquement des fichiers d'élèves sous forme de tableur ou de texte CSV.
  * Extensions + MIME : Android et iPadOS ne reconnaissent pas tous les mêmes types.
  * Ce filtre évite que le sélecteur mobile se positionne sur Photos/Vidéos.
