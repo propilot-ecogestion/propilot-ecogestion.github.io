@@ -112,8 +112,11 @@ function App() {
       setPendingTeacherRequests([]);setAdminRequestAlert(null);seenTeacherRequestsRef.current=null
       return
     }
+    // Ne pas remonter toute l’application lors d’un rafraîchissement du jeton
+    // (notamment au retour du sélecteur de fichiers sur Chrome Android).
+    // Recharger le compte uniquement lors d'un changement d'utilisateur.
     bootstrapAccount()
-  }, [session])
+  }, [session?.user?.id])
 
   useEffect(() => {
     if (profile?.approved) { loadClasses(); loadPendingInvites() }
