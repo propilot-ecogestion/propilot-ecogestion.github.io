@@ -173,71 +173,86 @@ export function readStudentsWorkbook(workbook,XLSX){
  */
 async function loadStudentFileBuffer(file){
   if(!file)throw new Error('Aucun fichier sélectionné.')
-  if(file.size===0)throw new Error('Le fichier sélectionné est vide. Téléchargez de nouveau le CSV Pronote.')
-  if(file.size>20*1024*1024)throw new Error('Ce fichier dépasse 20 Mo : exportez uniquement la liste des élèves.')
+  // Android peut retourner size=0 pour un document dont la taille n'est pas
+  // renseignée par le fournisseur. Vérifier les octets réellement lus.
+  if(Number(file.size)>20*1024*1024)throw new Error('Fichier trop volumineux (20 Mo maximum).')
+  let firstError=null
   if(typeof file.arrayBuffer==='function'){
     try{
       const data=await file.arrayBuffer()
-      if(data?.byteLength>0)return data
-    }catch(error){
-      // Certains fournisseurs iPadOS/Android ne permettent pas arrayBuffer().
-      // FileReader reste utilisable pour des documents téléchargés.
-      if(typeof FileReader==='undefined')throw error
-    }
+      if(data instanceof ArrayBuffer&&data.byteLength>0)return data
+    }catch(e){firstError=e}
   }
-  if(typeof FileReader==='undefined')throw new Error('Ce navigateur ne permet pas la lecture de fichiers. Essayez Safari ou Chrome.')
-  return await new Promise((resolve,reject)=>{
-    const reader=new FileReader()
-    reader.onerror=()=>reject(new Error('Impossible de lire le fichier depuis la tablette. Enregistrez-le dans Téléchargements puis réessayez.'))
-    reader.onabort=()=>reject(new Error('La lecture du fichier a été interrompue.'))
-    reader.onload=()=>resolve(reader.result)
-    try{reader.readAsArrayBuffer(file)}catch{
-      reject(new Error('Fichier non accessible. Téléchargez-le dans le stockage local de la tablette et sélectionnez-le depuis Fichiers.'))
-    }
-  })
+  if(typeof FileReader!=='undefined'){
+    try{
+      const data=await new Promise((resolve,reject)=>{
+        const reader=new FileReader()
+        reader.onerror=()=>reject(new Error('Lecture refusée par le fournisseur de documents Android.'))
+        reader.onabort=()=>reject(new Error('La sélection a été interrompue.'))
+        reader.onload=()=>resolve(reader.result)
+        reader.readAsArrayBuffer(file)
+      })
+      if(data instanceof ArrayBuffer&&data.byteLength>0)return data
+    }catch(e){firstError=e}
+  }
+  if(typeof file.text==='function'){
+    try{
+      const value=await file.text()
+      if(value)return new TextEncoder().encode(value).buffer
+    }catch(e){firstError=e}
+  }
+  const label=Number(file.size)===0?'taille indiquée : 0 octet':'lecture indisponible'
+  throw new Error('Fichier sélectionné mais contenu inaccessible ('+label+'). Enregistrez le CSV dans Téléchargements, puis réessayez dans Chrome.'+(firstError?.message?' Détail : '+String(firstError.message):''))
 }
 
 function decodeStudentText(data){
   const bytes=new Uint8Array(data)
+  // Pronote est généralement UTF-8 avec BOM ; certains exports Android ou
+  // tableurs sont en UTF-16 (éventuellement sans BOM).
   if(bytes[0]===255&&bytes[1]===254)return new TextDecoder('utf-16le').decode(bytes.subarray(2))
   if(bytes[0]===254&&bytes[1]===255)return new TextDecoder('utf-16be').decode(bytes.subarray(2))
-  // Exports Pronote : UTF-8 avec BOM. Autres exports : UTF-8 / Windows 1252.
-  let text=new TextDecoder('utf-8').decode(bytes)
-  if(text.includes('\uFFFD')){
-    try{text=new TextDecoder('windows-1252').decode(bytes)}catch{}
+  const sample=bytes.subarray(0,Math.min(bytes.length,400))
+  const evenZero=sample.filter((b,i)=>i%2===0&&b===0).length
+  const oddZero=sample.filter((b,i)=>i%2===1&&b===0).length
+  if(oddZero>sample.length/6&&oddZero>evenZero*4)return new TextDecoder('utf-16le').decode(bytes)
+  if(evenZero>sample.length/6&&evenZero>oddZero*4)return new TextDecoder('utf-16be').decode(bytes)
+  let decoded=new TextDecoder('utf-8').decode(bytes)
+  if(decoded.includes('\uFFFD')){
+    try{decoded=new TextDecoder('windows-1252').decode(bytes)}catch{}
   }
-  return text.replace(/^\uFEFF/,'')
+  return decoded.replace(/^\uFEFF/,'')
 }
 
 export async function readStudentsFromFile(file,XLSX){
-  const data=await loadStudentFileBuffer(file)
-  const bytes=new Uint8Array(data)
-  const extension=String(file.name||'').split('.').pop().toLowerCase()
-  if(extension==='numbers')throw new Error('Apple Numbers : exportez d’abord le document au format Excel ou CSV.')
-  const textFormat=['csv','tsv','tab','txt'].includes(extension)
-  const knownWorkbook=['xls','xlsx','xlsm','xlsb','ods'].includes(extension)
-  const zipSignature=bytes[0]===80&&bytes[1]===75&&bytes[2]===3&&bytes[3]===4
-  const oleSignature=bytes[0]===208&&bytes[1]===207&&bytes[2]===17&&bytes[3]===224
-  // Détection du contenu même lorsque la tablette renomme ou ne reconnaît
-  // pas l'extension du fichier téléchargé.
-  const looksBinary=zipSignature||oleSignature
-  if(textFormat||(!knownWorkbook&&!looksBinary)){
-    const decoded=decodeStudentText(data)
-    const result=readStudentsDelimitedText(decoded)
-    if(!result.error&&result.students.length)return result
-    if(textFormat)throw new Error(result.error||'Le CSV ne contient aucun élève reconnu.')
+  const buffer=await loadStudentFileBuffer(file)
+  const bytes=new Uint8Array(buffer)
+  const ext=String(file.name||'').split('.').pop().toLowerCase()
+  if(ext==='numbers')throw new Error('Apple Numbers : exportez d’abord le document au format Excel ou CSV.')
+  const zip=bytes[0]===80&&bytes[1]===75&&bytes[2]===3&&bytes[3]===4
+  const ole=bytes[0]===208&&bytes[1]===207&&bytes[2]===17&&bytes[3]===224
+  const binary=zip||ole
+  const prefix=decodeStudentText(bytes.subarray(0,Math.min(bytes.length,256)))
+  if(prefix.trimStart().startsWith('%PDF-'))throw new Error('Le document choisi est un PDF, pas un CSV. Téléchargez « Export CSV » depuis Pronote.')
+  if(/^\s*<(?:!doctype\s+html|html|head|body)\b/i.test(prefix))throw new Error('Le document choisi est une page HTML, pas le CSV Pronote. Téléchargez le fichier CSV complet.')
+  // Inspecter le contenu plutôt que l'extension ou le type MIME du fournisseur Android.
+  // Un fournisseur peut annoncer .xls, application/octet-stream ou 0 octet.
+  if(!binary){
+    const csv=readStudentsDelimitedText(decodeStudentText(buffer))
+    if(!csv.error&&csv.students.length)return csv
+    if(['csv','tsv','tab','txt'].includes(ext)||!['xlsx','xls','xlsm','xlsb','ods'].includes(ext)){
+      throw new Error(csv.error||'Aucun élève reconnu dans ce fichier texte. Vérifiez les colonnes Nom / Prénom ou Élèves.')
+    }
   }
   try{
-    const book=XLSX.read(data,{type:'array'})
-    return readStudentsWorkbook(book,XLSX)
+    const book=XLSX.read(buffer,{type:'array'})
+    const parsed=readStudentsWorkbook(book,XLSX)
+    if(parsed.error)throw new Error(parsed.error)
+    return parsed
   }catch(error){
-    if(looksBinary||knownWorkbook){
-      const text=decodeStudentText(data)
-      if(text.includes(';')||text.includes('\t')){
-        const csv=readStudentsDelimitedText(text)
-        if(!csv.error&&csv.students.length)return csv
-      }
+    if(!binary){
+      const csv=readStudentsDelimitedText(decodeStudentText(buffer))
+      if(!csv.error&&csv.students.length)return csv
     }
-    throw new Error('Impossible de décoder ce fichier. Enregistrez-le dans Téléchargements et réessayez, ou exportez en CSV / Excel.')
+    throw new Error('Impossible de lire le tableur sélectionné ('+String(error?.message||error)+'). Essayez l’export CSV Pronote.')
   }
 }
