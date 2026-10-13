@@ -179,6 +179,7 @@ function ImportStudentsModal({klass,onClose,onImported}) {
   const [importWarnings,setImportWarnings]=useState([])
   const [fileName,setFileName]=useState('')
   const [fileFeedback,setFileFeedback]=useState('')
+  const lastStudentFileChoice=useRef(null)
   const [showCsvPaste,setShowCsvPaste]=useState(false)
   const [csvPasteText,setCsvPasteText]=useState('')
   const [importSource,setImportSource]=useState(null)
@@ -245,6 +246,15 @@ function ImportStudentsModal({klass,onClose,onImported}) {
     }
   }
 
+  function handleStudentFileChoice(event){
+    const file=event.currentTarget.files?.item(0)||null
+    if(!file)return
+    const marker=[file.name,file.size,file.lastModified].join('|')
+    if(lastStudentFileChoice.current===marker)return
+    lastStudentFileChoice.current=marker
+    void parseFile(file)
+  }
+
   async function parseFile(file){
     setError('')
     setSkipped([])
@@ -253,17 +263,19 @@ function ImportStudentsModal({klass,onClose,onImported}) {
     setImportSource(null)
     setFileName(file?.name||'')
     if(!file){setFileFeedback('Aucun fichier sélectionné. Choisissez votre export Pronote dans Fichiers ou Téléchargements.');return}
-    setFileFeedback('Lecture de « '+file.name+' » en cours…')
+    setFileFeedback('Fichier reçu : « '+file.name+' » • '+(Number.isFinite(file.size)?file.size+' octets':'taille inconnue')+' • '+(file.type||'type non indiqué')+'. Lecture en cours…')
     setBusy(true)
+    let parsedCount=null
     try{
       const result=await readStudentsFromFile(file,XLSX)
+      parsedCount=result.students.length
       setFileFeedback(result.students.length+' élève(s) lus. Vérification des doublons dans la classe…')
       await handleParsedStudents(result,file.name)
     }catch(e){
       setPreview([])
       setSkipped([])
       setImportWarnings([])
-      setFileFeedback('Lecture ou vérification impossible pour « '+file.name+' ».')
+      setFileFeedback('Erreur : « '+file.name+' » ('+(Number.isFinite(file.size)?file.size+' octets':'taille inconnue')+', '+(file.type||'type inconnu')+'). '+(parsedCount!==null?parsedCount+' élève(s) lus ; vérification de classe en échec. ':'')+String(e?.message||e))
       setError('Import impossible : '+String(e?.message||e))
     }finally{
       setBusy(false)
@@ -290,7 +302,7 @@ function ImportStudentsModal({klass,onClose,onImported}) {
   return <Modal title="Importer des élèves (tableur ou CSV)" onClose={onClose}>
     <div className="stack">
       <p className="muted">Formats pris en charge : <strong>Excel (.xlsx, .xls, .xlsm, .xlsb), LibreOffice (.ods), CSV, TSV, texte délimité</strong>. Colonnes demandées : <strong>Nom</strong>, <strong>Prénom</strong> et <strong>Mail (facultatif)</strong>. Une colonne unique <strong>Élève</strong>, contenant le nom et le prénom, est également reconnue, notamment dans les exports CSV Pronote. Vérifiez et corrigez directement dans l’aperçu les séparations proposées. Les autres colonnes sont ignorées et les doublons écartés.</p>
-      <input type="file" accept={STUDENT_SPREADSHEET_ACCEPT} disabled={busy} aria-label="Choisir un fichier d’élèves (Excel, CSV Pronote, LibreOffice)" onClick={e=>{e.currentTarget.value=''}} onChange={e=>{const file=e.currentTarget.files?.item(0)||null;void parseFile(file)}}/>
+      <input type="file" accept={STUDENT_SPREADSHEET_ACCEPT} disabled={busy} aria-label="Choisir un fichier d’élèves (Excel, CSV Pronote, LibreOffice)" onClick={e=>{lastStudentFileChoice.current=null;e.currentTarget.value=''}} onInput={handleStudentFileChoice} onChange={handleStudentFileChoice}/>
       <small role="status" aria-live="polite" className="student-import-file-status">{fileFeedback||'Sélectionnez le fichier depuis Fichiers ou Téléchargements (iPad, Android ou ordinateur).'}</small>
       {IS_ANDROID_CHROME&&<p className="android-chrome-file-tip" role="note"><strong>Chrome Android :</strong> touchez « Photos et vidéos » si cette option apparaît, puis <strong>☰ → Téléchargements</strong> pour ouvrir le CSV Pronote. Si vous restez dans la galerie, cherchez « Parcourir d’autres fichiers ».</p>}
       <button type="button" className="setup-csv-fallback-trigger" onClick={()=>setShowCsvPaste(v=>!v)} aria-expanded={showCsvPaste}>Le CSV n’apparaît pas sur Android ? {showCsvPaste?'Masquer':'Importer par copier-coller'}</button>
