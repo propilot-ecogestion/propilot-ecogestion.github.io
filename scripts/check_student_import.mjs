@@ -249,4 +249,49 @@ await mobileCheck('tablette : fichier vide provoque une erreur explicite',async(
   Object.defineProperty(f,'name',{value:'empty.csv'})
   await assert.rejects(()=>readStudentsFromFile(f,XLSX),/vide/)
 })
-console.log('\nImport des élèves : 27 scénarios réussis (dont 4 contrôles mobiles).')
+await mobileCheck('Android fournisseur annonce 0 octet mais livre bien le CSV',async()=>{
+  const data=new TextEncoder().encode('\uFEFFÉlèves;Adresse E-mail\nDUPONT Léa;\nMARTIN Samir;samir@exemple.fr')
+  const file={name:'Export CSV.csv',size:0,type:'application/octet-stream',arrayBuffer:async()=>data.buffer}
+  const r=await readStudentsFromFile(file,XLSX)
+  assert.equal(r.students.length,2)
+  assert.equal(r.source,null)
+})
+await mobileCheck('Android taille zéro et arrayBuffer vide : secours FileReader',async()=>{
+  const original=globalThis.FileReader
+  const good=new TextEncoder().encode('Nom;Prénom;Mail\nDUPONT;Léa;')
+  globalThis.FileReader=class {readAsArrayBuffer(){this.result=good.buffer;queueMicrotask(()=>this.onload())}}
+  const file={name:'eleves.csv',size:0,arrayBuffer:async()=>new ArrayBuffer(0)}
+  try{
+    const r=await readStudentsFromFile(file,XLSX)
+    assert.equal(r.students.length,1)
+    assert.equal(r.students[0].first_name,'Léa')
+  }finally{if(original===undefined)delete globalThis.FileReader;else globalThis.FileReader=original}
+})
+await mobileCheck('Android annonce XLSX alors que le contenu est CSV Pronote',async()=>{
+  const file=new Blob(['Élèves;Adresse E-mail;Classe de rattachement\nDUPONT Léa;;2MRC'],{type:'application/vnd.ms-excel'})
+  Object.defineProperty(file,'name',{value:'Export CSV.xlsx'})
+  const r=await readStudentsFromFile(file,XLSX)
+  assert.equal(r.students.length,1)
+  assert.equal(r.source,'pronote')
+})
+await mobileCheck('CSV UTF-16 sans BOM reconnu par contenu',async()=>{
+  const text='Élèves;Adresse E-mail\nDUPONT Léa;lea@exemple.fr'
+  const buf=new Uint8Array(text.length*2)
+  for(let i=0;i<text.length;i++){buf[i*2]=text.charCodeAt(i)&255;buf[i*2+1]=text.charCodeAt(i)>>8}
+  const file=new Blob([buf])
+  Object.defineProperty(file,'name',{value:'pronote.csv'})
+  const r=await readStudentsFromFile(file,XLSX)
+  assert.equal(r.students.length,1)
+  assert.equal(r.students[0].email,'lea@exemple.fr')
+})
+await mobileCheck('Android choisit un aperçu HTML à la place du CSV : message ciblé',async()=>{
+  const file=new Blob(['<!doctype html><html><body>Pronote</body></html>'])
+  Object.defineProperty(file,'name',{value:'Export.csv'})
+  await assert.rejects(()=>readStudentsFromFile(file,XLSX),/HTML/)
+})
+await mobileCheck('Android fichier entièrement vide : erreur explicite après tentative',async()=>{
+  const file=new Blob([])
+  Object.defineProperty(file,'name',{value:'CSV.csv'})
+  await assert.rejects(()=>readStudentsFromFile(file,XLSX),/0 octet|inaccessible/)
+})
+console.log('\nImport des élèves : 33 scénarios réussis (dont 10 contrôles mobiles).')
