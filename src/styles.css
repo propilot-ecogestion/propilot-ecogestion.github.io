@@ -588,3 +588,7 @@
 .setup-csv-paste-panel textarea{box-sizing:border-box;width:100%;max-width:100%;min-width:0;height:116px;resize:vertical;padding:9px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;font-size:13px;line-height:1.5}
 .setup-csv-paste-panel p{margin:0;color:#64748b;font-size:12px;line-height:1.5;font-weight:400}
 .setup-csv-paste-panel .btn{align-self:flex-start}
+
+/* Aide contextuelle du sélecteur natif Chrome sur Android, sans surcharger le PC. */
+.android-chrome-file-tip{margin:8px 0 0;padding:9px 11px;border-left:3px solid #93c5fd;background:#eff6ff;border-radius:5px;color:#334155;font-size:12px;line-height:1.5;font-weight:400;overflow-wrap:anywhere}
+.android-chrome-file-tip strong{font-weight:750}
